@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { WorkoutLog } from "@/lib/types";
+import { formatNumber } from "@/lib/format";
 
 export function WorkoutsTable({ workouts }: { workouts: WorkoutLog[] }) {
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "date", desc: true }]);
@@ -123,7 +124,7 @@ export function WorkoutsTable({ workouts }: { workouts: WorkoutLog[] }) {
         cell: ({ row }) => (
           <div className="flex items-center justify-end gap-1 text-right font-semibold text-foreground tabular-nums">
             <Flame className="h-3 w-3 text-primary" />
-            <span>{row.original.calories.toLocaleString()} kcal</span>
+            <span>{formatNumber(row.original.calories)} kcal</span>
           </div>
         ),
       },
@@ -183,7 +184,7 @@ export function WorkoutsTable({ workouts }: { workouts: WorkoutLog[] }) {
             {row.original.steps > 0 ? (
               <>
                 <Footprints className="h-3 w-3 text-primary" />
-                <span>{row.original.steps.toLocaleString()}</span>
+                <span>{formatNumber(row.original.steps)}</span>
               </>
             ) : (
               <span className="text-muted-foreground">—</span>
@@ -243,7 +244,7 @@ export function WorkoutsTable({ workouts }: { workouts: WorkoutLog[] }) {
               Workout &amp; Activity Sessions
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              {workouts.length.toLocaleString()} total logged workouts in this view.
+              {formatNumber(workouts.length)} total logged workouts in this view.
             </CardDescription>
           </div>
 

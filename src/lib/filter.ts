@@ -1,4 +1,4 @@
-import type { HealthData, SeriesPoint, WorkoutLog, SleepStageLog, ActivityIntensityPoint, GeoPoint } from "./types";
+import type { HealthData, SeriesPoint, WorkoutLog, SleepStageLog, ActivityIntensityPoint, GeoPoint, GeoTrackSession } from "./types";
 
 export type Granularity = "all" | "year" | "month" | "week";
 export type PresetRange = "all" | "7d" | "30d" | "90d" | "1y" | "custom";
@@ -130,6 +130,10 @@ export function filterIntensity(intensity: ActivityIntensityPoint[], f: FilterSt
 
 export function filterGeo(geo: GeoPoint[], f: FilterState, maxDate?: string): GeoPoint[] {
   return filterDaily(geo, f, maxDate);
+}
+
+export function filterGeoTracks(tracks: GeoTrackSession[], f: FilterState, maxDate?: string): GeoTrackSession[] {
+  return filterDaily(tracks, f, maxDate);
 }
 
 export function summarize(series: SeriesPoint[]) {

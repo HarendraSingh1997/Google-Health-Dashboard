@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { HealthScoreResult, InsightItem } from "@/lib/insights";
 import type { PersonalRecords } from "@/lib/types";
+import { formatNumber } from "@/lib/format";
 
 export function HealthScoreHero({ healthScore }: { healthScore: HealthScoreResult }) {
   const score = healthScore.overallScore;
@@ -213,7 +214,7 @@ export function PersonalRecordsBanner({ records }: { records: PersonalRecords })
             Peak Steps / Day
           </div>
           <div className="mt-1 text-lg font-bold text-foreground tabular-nums">
-            {records.maxStepsDay ? records.maxStepsDay.value.toLocaleString() : "—"}
+            {records.maxStepsDay ? formatNumber(records.maxStepsDay.value) : "—"}
           </div>
           <div className="text-[10px] text-muted-foreground">
             {records.maxStepsDay?.date || ""}
@@ -225,7 +226,7 @@ export function PersonalRecordsBanner({ records }: { records: PersonalRecords })
             Max Calorie Burn
           </div>
           <div className="mt-1 text-lg font-bold text-foreground tabular-nums">
-            {records.maxCaloriesDay ? `${records.maxCaloriesDay.value.toLocaleString()} kcal` : "—"}
+            {records.maxCaloriesDay ? `${formatNumber(records.maxCaloriesDay.value)} kcal` : "—"}
           </div>
           <div className="text-[10px] text-muted-foreground">
             {records.maxCaloriesDay?.date || ""}
@@ -264,7 +265,7 @@ export function PersonalRecordsBanner({ records }: { records: PersonalRecords })
             {(records.totalLifetimeSteps / 1_000_000).toFixed(2)}M
           </div>
           <div className="text-[10px] text-muted-foreground">
-            {records.totalDaysTracked.toLocaleString()} days tracked
+            {formatNumber(records.totalDaysTracked)} days tracked
           </div>
         </div>
 
@@ -273,7 +274,7 @@ export function PersonalRecordsBanner({ records }: { records: PersonalRecords })
             Total Workouts
           </div>
           <div className="mt-1 text-lg font-bold text-foreground tabular-nums">
-            {records.totalWorkoutsLogged.toLocaleString()}
+            {formatNumber(records.totalWorkoutsLogged)}
           </div>
           <div className="text-[10px] text-muted-foreground">
             Structured sessions

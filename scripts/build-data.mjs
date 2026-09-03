@@ -402,16 +402,62 @@ function monthlySumFromDaily(daily) {
 const stepsMonthly = monthlySumFromDaily(dailyStepsSeries);
 const caloriesMonthly = monthlySumFromDaily(dailyCaloriesSeries);
 
-// ============ GPS location & Activity Heatmap ============
+// ============ GPS location, session tracks & Activity Heatmap ============
 const gpsDir = join(ROOT, "Physical Activity_GoogleData");
 const geoPoints = [];
+const geoTracks = []; // per-day movement sessions (start→end routes for animated playback)
 const activityHeat = Array.from({ length: 7 }, () => new Array(24).fill(0));
+
+// Session splitting / track building tunables.
+const SESSION_GAP_MS = 15 * 60 * 1000; // new session after 15 min without a fix
+const MAX_TRACK_POINTS = 200; // downsample cap per session (keeps health.json small)
+const MIN_SESSION_FIXES = 8; // ignore tiny blips
+const MIN_PATH_M = 100; // ignore stationary noise (unless displaced)
+const MIN_DISPLACEMENT_M = 50;
+
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Workout start epochs (UTC ms) for session labeling. Verified against GPS
+// timestamps: Fitbit exercise startTime ("MM/DD/YY HH:MM:SS") is already UTC.
+const workoutWindows = [];
+for (const w of workouts) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(w.startTime || "");
+  if (!m) continue;
+  const start = Date.UTC(+`20${m[3]}`, +m[1] - 1, +m[2], +m[4], +m[5], +m[6]);
+  workoutWindows.push({ start, end: start + (w.durationMin || 0) * 60000, activityName: w.activityName });
+}
+
+function matchWorkoutActivity(sessionStart) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const w of workoutWindows) {
+    if (sessionStart >= w.start - 20 * 60000 && sessionStart <= w.end + 20 * 60000) {
+      const dist = Math.abs(sessionStart - w.start);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = w.activityName;
+      }
+    }
+  }
+  return best;
+}
+
 if (existsSync(gpsDir)) {
   const gpsFiles = readdirSync(gpsDir).filter((f) => f.startsWith("gps_location_") && f.endsWith(".csv"));
   for (const f of gpsFiles) {
     const { data } = loadCSV(`Physical Activity_GoogleData/${f}`);
     if (!data.length) continue;
     let la = 0, lo = 0, al = 0, n = 0;
+    const fixes = [];
     for (const r of data) {
       const lat = num(r.latitude);
       const lng = num(r.longitude);
@@ -421,6 +467,8 @@ if (existsSync(gpsDir)) {
       lo += lng;
       if (alt !== null) al += alt;
       n++;
+      const t = new Date(r.timestamp).getTime();
+      if (Number.isFinite(t)) fixes.push({ t, lat, lng, alt });
       const dt = new Date(r.timestamp);
       const hr = dt.getUTCHours();
       const dow = dt.getUTCDay();
@@ -434,9 +482,56 @@ if (existsSync(gpsDir)) {
       alt: n ? +(al / n).toFixed(1) : null,
       count: n,
     });
+
+    // ---- Split the day's fixes into movement sessions ----
+    fixes.sort((a, b) => a.t - b.t);
+    const sessions = [];
+    let current = [];
+    for (const fix of fixes) {
+      if (current.length && fix.t - current[current.length - 1].t > SESSION_GAP_MS) {
+        sessions.push(current);
+        current = [];
+      }
+      current.push(fix);
+    }
+    if (current.length) sessions.push(current);
+
+    const dayLabel = f.replace("gps_location_", "").replace(".csv", "");
+    for (const s of sessions) {
+      if (s.length < MIN_SESSION_FIXES) continue;
+      let pathM = 0;
+      for (let i = 1; i < s.length; i++) {
+        pathM += haversineM(s[i - 1].lat, s[i - 1].lng, s[i].lat, s[i].lng);
+      }
+      const displacementM = haversineM(s[0].lat, s[0].lng, s[s.length - 1].lat, s[s.length - 1].lng);
+      if (pathM < MIN_PATH_M && displacementM < MIN_DISPLACEMENT_M) continue;
+
+      // Stride-downsample, always keeping first & last fixes.
+      const stride = Math.max(1, Math.ceil(s.length / MAX_TRACK_POINTS));
+      const sampled = s.filter((_, i) => i % stride === 0);
+      if (sampled[sampled.length - 1] !== s[s.length - 1]) sampled.push(s[s.length - 1]);
+
+      const t0 = s[0].t;
+      const tEnd = s[s.length - 1].t;
+      geoTracks.push({
+        date: dayLabel,
+        start: t0,
+        end: tEnd,
+        activity: matchWorkoutActivity(t0),
+        distanceM: Math.round(pathM),
+        // [lat, lng, alt, elapsed seconds since session start]
+        points: sampled.map((p) => [
+          +p.lat.toFixed(5),
+          +p.lng.toFixed(5),
+          p.alt === null ? null : +p.alt.toFixed(1),
+          Math.round((p.t - t0) / 1000),
+        ]),
+      });
+    }
   }
 }
 geoPoints.sort((a, b) => a.date.localeCompare(b.date));
+geoTracks.sort((a, b) => a.start - b.start);
 
 // ============ Elevation ============
 const elevByMonth = {};
@@ -576,6 +671,7 @@ const derived = {
   stepsMonthly,
   caloriesMonthly,
   geoPoints,
+  geoTracks,
   activityHeat,
   elevationSeries,
 };
@@ -590,5 +686,6 @@ console.log("Daily distance points:", dailyDistanceSeries.length);
 console.log("Workouts logged:", workouts.length);
 console.log("Sleep logs:", sleepLogs.length);
 console.log("Badges earned:", badges.length);
+console.log("GPS sessions tracked:", geoTracks.length);
 console.log("Max steps day:", personalRecords.maxStepsDay);
 console.log("Longest 10k streak:", personalRecords.longest10kStreakDays, "days (", personalRecords.longestStreakPeriod, ")");

@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import type { SeriesPoint } from "@/lib/types";
+import { formatNumber } from "@/lib/format";
 
 interface MetricCardProps {
   label: string;
@@ -85,7 +86,7 @@ export function MetricCard({
         <div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-bold tracking-tight text-card-foreground tabular-nums sm:text-3xl">
-              {typeof value === "number" ? value.toLocaleString() : value}
+              {typeof value === "number" ? formatNumber(value) : value}
             </span>
             {unit && (
               <span className="text-xs font-medium text-muted-foreground">
@@ -97,7 +98,7 @@ export function MetricCard({
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {avg !== undefined && (
               <span className="tabular-nums">
-                avg <span className="font-semibold text-foreground">{typeof avg === "number" ? avg.toLocaleString() : avg}</span>
+                avg <span className="font-semibold text-foreground">{typeof avg === "number" ? formatNumber(avg) : avg}</span>
               </span>
             )}
             {min !== undefined && max !== undefined && (

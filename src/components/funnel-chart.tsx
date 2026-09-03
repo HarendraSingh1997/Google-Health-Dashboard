@@ -4,9 +4,12 @@ import { FunnelChart, Funnel, LabelList, Tooltip, ResponsiveContainer, Cell } fr
 import { colorFor } from "@/lib/palette";
 
 export function FunnelChartView({ data }: { data: { stage: string; value: number }[] }) {
+  const height = 260;
   return (
-    <div className="w-full min-w-0 h-[260px]">
-      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+    // Explicit pixel height on both wrapper and ResponsiveContainer: percentage
+    // heights measure -1 on first paint / inside tab panels.
+    <div className="relative w-full min-w-0 overflow-hidden" style={{ height, minHeight: height }}>
+      <ResponsiveContainer width="100%" height={height} minWidth={0} minHeight={height}>
       <FunnelChart>
         <Tooltip content={({ active, payload }) => {
           if (!active || !payload?.length) return null;

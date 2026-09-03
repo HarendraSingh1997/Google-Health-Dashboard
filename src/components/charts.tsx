@@ -20,6 +20,7 @@ import {
   Legend,
 } from "recharts";
 import { colorFor } from "@/lib/palette";
+import { formatNumber } from "@/lib/format";
 
 export interface SeriesDef {
   key: string;
@@ -78,7 +79,7 @@ function CustomTooltipContent({
                 </span>
               </div>
               <span className="font-bold text-popover-foreground tabular-nums">
-                {typeof val === "number" ? val.toLocaleString() : val}
+                {typeof val === "number" ? formatNumber(val) : val}
                 {unit ? ` ${unit}` : ""}
               </span>
             </div>
@@ -119,11 +120,13 @@ export function TimeSeriesChart({
     );
   }
 
-  const heightClass = height === 240 ? "h-[240px]" : height === 320 ? "h-[320px]" : "h-[280px]";
-
   return (
-    <div className={`flex w-full min-w-0 ${heightClass}`}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+    // Block (not flex) wrapper with an explicit pixel height, and a numeric
+    // height on ResponsiveContainer: percentage heights depend on the parent
+    // having a resolved size at measure time, which yields width/height -1
+    // (and the "width(-1) and height(-1)" warning) on first paint / in tabs.
+    <div className="relative w-full min-w-0 overflow-hidden" style={{ height, minHeight: height }}>
+      <ResponsiveContainer width="100%" height={height} minWidth={0} minHeight={height}>
         {type === "area" ? (
           <AreaChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 4 }}>
             <defs>
@@ -214,11 +217,10 @@ export function StackedAreaChart({
     );
   }
 
-  const heightClass = height === 300 ? "h-[300px]" : "h-[280px]";
-
   return (
-    <div className={`w-full min-w-0 ${heightClass}`}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+    // See TimeSeriesChart: explicit pixel height avoids width/height -1 warnings.
+    <div className="relative w-full min-w-0 overflow-hidden" style={{ height, minHeight: height }}>
+      <ResponsiveContainer width="100%" height={height} minWidth={0} minHeight={height}>
         <AreaChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 4 }}>
           <defs>
             {series.map((s, i) => {
@@ -280,11 +282,10 @@ export function MonthlyBarChart({
     );
   }
 
-  const heightClass = height === 260 ? "h-[260px]" : "h-[280px]";
-
   return (
-    <div className={`w-full min-w-0 ${heightClass}`}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+    // See TimeSeriesChart: explicit pixel height avoids width/height -1 warnings.
+    <div className="relative w-full min-w-0 overflow-hidden" style={{ height, minHeight: height }}>
+      <ResponsiveContainer width="100%" height={height} minWidth={0} minHeight={height}>
         <BarChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" strokeOpacity={0.6} />
           <XAxis dataKey={xKey} tickLine={false} axisLine={false} minTickGap={20} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} />
@@ -329,11 +330,10 @@ export function DistributionChart({
     );
   }
 
-  const heightClass = height === 280 ? "h-[280px]" : "h-[260px]";
-
   return (
-    <div className={`w-full min-w-0 ${heightClass}`}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+    // See TimeSeriesChart: explicit pixel height avoids width/height -1 warnings.
+    <div className="relative w-full min-w-0 overflow-hidden" style={{ height, minHeight: height }}>
+      <ResponsiveContainer width="100%" height={height} minWidth={0} minHeight={height}>
         <PieChart>
           <Tooltip content={<CustomTooltipContent />} />
           <Pie
@@ -362,11 +362,10 @@ export function WeekdayComparisonChart({
   data: { category: string; Weekday: number; Weekend: number; unit?: string }[];
   height?: number;
 }) {
-  const heightClass = height === 280 ? "h-[280px]" : "h-[240px]";
-
   return (
-    <div className={`w-full min-w-0 ${heightClass}`}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+    // See TimeSeriesChart: explicit pixel height avoids width/height -1 warnings.
+    <div className="relative w-full min-w-0 overflow-hidden" style={{ height, minHeight: height }}>
+      <ResponsiveContainer width="100%" height={height} minWidth={0} minHeight={height}>
         <BarChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" strokeOpacity={0.6} />
           <XAxis dataKey="category" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} />

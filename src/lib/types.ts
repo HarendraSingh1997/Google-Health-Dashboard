@@ -120,6 +120,20 @@ export interface GeoPoint {
   count: number;
 }
 
+/** Single movement session: ordered [lat, lng, alt, elapsedSec] fixes. */
+export interface GeoTrackSession {
+  date: string;
+  /** UTC epoch ms of first fix. */
+  start: number;
+  /** UTC epoch ms of last fix. */
+  end: number;
+  /** Matched workout activity name, if any. */
+  activity: string | null;
+  /** Total path length in meters. */
+  distanceM: number;
+  points: [number, number, number | null, number][];
+}
+
 export interface HealthData {
   datasets: Record<string, Dataset>;
   derived: {
@@ -140,6 +154,7 @@ export interface HealthData {
     stepsMonthly: { month: string; total: number }[];
     caloriesMonthly: { month: string; total: number }[];
     geoPoints: GeoPoint[];
+    geoTracks: GeoTrackSession[];
     activityHeat: number[][];
     elevationSeries: { date: string; value: number }[];
   };

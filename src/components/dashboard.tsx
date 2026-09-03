@@ -18,6 +18,7 @@ import {
 } from "@/components/charts";
 import { Heatmap } from "@/components/heatmap";
 import { GeoMap } from "@/components/geo-map";
+import { RoutePlayer } from "@/components/route-player";
 import { FunnelChartView } from "@/components/funnel-chart";
 import { DataTable } from "@/components/data-table";
 import { WorkoutsTable } from "@/components/workouts-table";
@@ -32,6 +33,7 @@ import {
   buildOptions,
   filterDaily,
   filterGeo,
+  filterGeoTracks,
   filterMonthly,
   filterWorkouts,
   filterSleepStages,
@@ -47,6 +49,7 @@ import {
   computeWeekdayVsWeekend,
   generateHealthInsights,
 } from "@/lib/insights";
+import { formatNumber } from "@/lib/format";
 import {
   Activity,
   Moon,
@@ -197,7 +200,7 @@ export function Dashboard({ data }: { data: HealthData }) {
   const {
     fSteps, fCalories, fDistance, fIntensity, fWorkouts, fSleepStages,
     fSleepScore, fDeep, fSleepRhr, fStress, fRhr, fHrv,
-    fSpo2, fResp, fTemp, fVo2, fWeight, fAzb, fGeo,
+    fSpo2, fResp, fTemp, fVo2, fWeight, fAzb, fGeo, fTracks,
   } = React.useMemo(() => {
     const max = opts.maxDate;
     return {
@@ -220,6 +223,7 @@ export function Dashboard({ data }: { data: HealthData }) {
       fWeight: filterDaily(D.weight.series, filter, max),
       fAzb: filterMonthly(derived.azmSeries, filter, max),
       fGeo: filterGeo(derived.geoPoints, filter, max),
+      fTracks: filterGeoTracks(derived.geoTracks ?? [], filter, max),
     };
   }, [derived, D, filter, opts.maxDate]);
 
@@ -383,7 +387,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                User: <span className="font-semibold text-foreground">{user.name}</span> · Tracking since {user.memberSince} · <span className="font-medium text-primary">{records.totalDaysTracked.toLocaleString()} Days Logged</span>
+                User: <span className="font-semibold text-foreground">{user.name}</span> · Tracking since {user.memberSince} · <span className="font-medium text-primary">{formatNumber(records.totalDaysTracked)} Days Logged</span>
               </p>
             </div>
           </div>
@@ -805,7 +809,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                     Daily Steps Trend
                   </CardTitle>
                   <CardDescription className="text-xs text-muted-foreground">
-                    {sumSteps?.count} days recorded · avg {sumSteps?.avg?.toLocaleString()} steps.
+                    {sumSteps?.count} days recorded · avg {sumSteps?.avg !== undefined ? formatNumber(sumSteps.avg) : "—"} steps.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -1039,6 +1043,8 @@ export function Dashboard({ data }: { data: HealthData }) {
 
           {/* ================= GEO & ELEVATION TAB ================= */}
           <TabsContent value="geo" className="space-y-6">
+            <RoutePlayer tracks={fTracks} />
+
             <Card className="w-full rounded-3xl border border-border bg-card p-5 shadow-sm">
               <CardHeader className="p-0 pb-4">
                 <CardTitle className="text-base font-bold text-card-foreground">
@@ -1134,7 +1140,7 @@ export function Dashboard({ data }: { data: HealthData }) {
         {/* Footer */}
         <footer className="mt-12 border-t border-border pt-6 text-center text-xs text-muted-foreground">
           <p>
-            Google Health &amp; Fitbit Data Analytics · Built for {user.name} · {records.totalLifetimeSteps.toLocaleString()} Total Lifetime Steps · {records.totalLifetimeDistanceKm.toLocaleString()} km Explored
+            Google Health &amp; Fitbit Data Analytics · Built for {user.name} · {formatNumber(records.totalLifetimeSteps)} Total Lifetime Steps · {formatNumber(records.totalLifetimeDistanceKm)} km Explored
           </p>
         </footer>
       </div>

@@ -1,4 +1,5 @@
 import type { HealthData, SeriesPoint, WorkoutLog, SleepStageLog } from "@/lib/types";
+import { formatNumber } from "@/lib/format";
 
 export interface HealthScoreResult {
   overallScore: number;
@@ -91,9 +92,9 @@ export function computeHealthScore(
 
   const highlights: string[] = [];
   if (avgSteps >= 10000) {
-    highlights.push(`Averaging ${Math.round(avgSteps).toLocaleString()} daily steps — surpassing the 10k target!`);
+    highlights.push(`Averaging ${formatNumber(Math.round(avgSteps))} daily steps — surpassing the 10k target!`);
   } else {
-    highlights.push(`Averaging ${Math.round(avgSteps).toLocaleString()} daily steps (${Math.round((avgSteps / 10000) * 100)}% of 10k goal).`);
+    highlights.push(`Averaging ${formatNumber(Math.round(avgSteps))} daily steps (${Math.round((avgSteps / 10000) * 100)}% of 10k goal).`);
   }
 
   if (avgSleep >= 80) {
@@ -202,8 +203,8 @@ export function generateHealthInsights(
       id: "record-steps",
       category: "milestone",
       title: "All-Time Step Peak Record",
-      description: `Your highest recorded single-day step count was ${records.maxStepsDay.value.toLocaleString()} steps on ${records.maxStepsDay.date} (Ruby Slippers milestone).`,
-      metric: `${records.maxStepsDay.value.toLocaleString()} steps`,
+      description: `Your highest recorded single-day step count was ${formatNumber(records.maxStepsDay.value)} steps on ${records.maxStepsDay.date} (Ruby Slippers milestone).`,
+      metric: `${formatNumber(records.maxStepsDay.value)} steps`,
       badgeText: "Personal Best",
       badgeVariant: "default",
       iconType: "trophy",
@@ -247,7 +248,7 @@ export function generateHealthInsights(
     id: "workout-frequency",
     category: "activity",
     title: "Workout Output & Calorie Burn",
-    description: `${workoutCount} logged structured workouts totaling ${totalBurn.toLocaleString()} active workout kcal.`,
+    description: `${workoutCount} logged structured workouts totaling ${formatNumber(totalBurn)} active workout kcal.`,
     metric: `${workoutCount} sessions`,
     badgeText: "Workout Volume",
     badgeVariant: "secondary",
