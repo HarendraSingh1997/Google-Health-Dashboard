@@ -21,6 +21,8 @@ import { GeoMap } from "@/components/geo-map";
 import { RoutePlayer } from "@/components/route-player";
 import { AICoach } from "@/components/ai-coach";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
+import { SwimSection } from "@/components/swim-section";
+import { TimelineChart } from "@/components/timeline-chart";
 import { FunnelChartView } from "@/components/funnel-chart";
 import { DataTable } from "@/components/data-table";
 import { WorkoutsTable } from "@/components/workouts-table";
@@ -547,6 +549,27 @@ export function Dashboard({ data }: { data: HealthData }) {
             <HealthScoreHero healthScore={healthScore} />
             <PersonalRecordsBanner records={records} />
 
+            <Card className="w-full rounded-3xl border border-border bg-card p-5 shadow-sm">
+              <CardHeader className="p-0 pb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base font-bold text-card-foreground">
+                      Training Timeline — Sessions &amp; Milestones
+                    </CardTitle>
+                    <CardDescription className="text-xs text-muted-foreground">
+                      Every workout in {label}, grouped by activity · diamonds mark badges and records.
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline">
+                    {fWorkouts.length} Sessions
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <TimelineChart workouts={fWorkouts} badges={derived.badges} records={records} />
+              </CardContent>
+            </Card>
+
             <section className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-4">
               <MetricCard
                 label="Daily Steps"
@@ -891,6 +914,8 @@ export function Dashboard({ data }: { data: HealthData }) {
             </Card>
 
             <WorkoutsTable workouts={fWorkouts} />
+
+            <SwimSection workouts={fWorkouts} />
           </TabsContent>
 
           {/* ================= CARDIOVASCULAR & VITALS TAB ================= */}

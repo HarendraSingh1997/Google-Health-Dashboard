@@ -173,6 +173,17 @@ def build_documents(data):
         text += "."
         if zones:
             text += " Heart-rate zones: " + ", ".join(zones) + "."
+        if w.get("activityName") == "Swim":
+            swim_bits = []
+            if w.get("swimLengths"):
+                swim_bits.append(f"{w['swimLengths']} pool lengths")
+            if w.get("poolLengthM"):
+                swim_bits.append(f"{w['poolLengthM']} m pool")
+            if w.get("paceSecPerKm"):
+                per100 = w["paceSecPerKm"] / 10
+                swim_bits.append(f"pace {int(per100 // 60)}:{int(per100 % 60):02d} per 100 m")
+            if swim_bits:
+                text += " Swim details: " + ", ".join(swim_bits) + "."
         docs.append((f"workout-{w['id']}",
                      text,
                      {"kind": "workout", "date": w["date"], "activity": w["activityName"]}))

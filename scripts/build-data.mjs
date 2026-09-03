@@ -276,6 +276,11 @@ for (const f of exerciseFiles) {
         fatBurnMin: ex.heartRateZones?.find((z) => z.name === "Fat Burn")?.minutes || 0,
         cardioMin: ex.heartRateZones?.find((z) => z.name === "Cardio")?.minutes || 0,
         peakMin: ex.heartRateZones?.find((z) => z.name === "Peak")?.minutes || 0,
+        // Swim-specific (25 m pool laps etc.); null for non-swim activities.
+        swimLengths: ex.activityName === "Swim" ? (num(ex.swimLengths) ?? null) : null,
+        poolLengthM: ex.activityName === "Swim" ? (num(ex.poolLength) ?? null) : null,
+        paceSecPerKm: ex.activityName === "Swim" ? (num(ex.pace) ?? null) : null,
+        speedKmh: ex.activityName === "Swim" ? (num(ex.speed) ?? null) : null,
       });
     }
   } catch {}

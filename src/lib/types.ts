@@ -62,6 +62,13 @@ export interface WorkoutLog {
   fatBurnMin: number;
   cardioMin: number;
   peakMin: number;
+  /** Swim-only (25 m pool laps etc.); null for other activities. */
+  swimLengths: number | null;
+  poolLengthM: number | null;
+  /** Seconds per km as exported by Fitbit. */
+  paceSecPerKm: number | null;
+  /** km/h as exported by Fitbit. */
+  speedKmh: number | null;
 }
 
 export interface ActivityIntensityPoint {
