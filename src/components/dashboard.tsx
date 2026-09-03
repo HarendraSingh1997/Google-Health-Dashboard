@@ -14,6 +14,7 @@ import {
   DistributionChart,
   WeekdayComparisonChart,
   type SeriesDef,
+  type ChartDatum,
 } from "@/components/charts";
 import { Heatmap } from "@/components/heatmap";
 import { GeoMap } from "@/components/geo-map";
@@ -62,12 +63,103 @@ import {
   Download,
 } from "lucide-react";
 
-function toChart(series: SeriesPoint[], key = "value"): any[] {
+function toChart(series: SeriesPoint[], key = "value"): ChartDatum[] {
   return series.map((p) => ({ date: p.date, [key]: p.value }));
 }
 
-function rowsFromSeries(series: SeriesPoint[]): Record<string, any>[] {
+function rowsFromSeries(series: SeriesPoint[]): Record<string, string | number>[] {
   return series.map((p) => ({ date: p.date, value: p.value }));
+}
+
+const PRESET_BUTTONS = [
+  { id: "all", label: "All Time" },
+  { id: "1y", label: "1 Year" },
+  { id: "90d", label: "90 Days" },
+  { id: "30d", label: "30 Days" },
+  { id: "7d", label: "7 Days" },
+] as const;
+
+// Static chart series definitions — module scope keeps referential stability.
+const SLEEP_STAGES_DEFS: SeriesDef[] = [
+  { key: "deep", label: "Deep Sleep", color: "var(--color-primary)" },
+  { key: "rem", label: "REM Sleep", color: "var(--color-chart-2)" },
+  { key: "light", label: "Light Sleep", color: "var(--color-chart-3)" },
+  { key: "wake", label: "Awake / Restless", color: "var(--color-chart-5)" },
+];
+
+const INTENSITY_DEFS: SeriesDef[] = [
+  { key: "very", label: "Very Active (min)", color: "var(--color-chart-1)" },
+  { key: "fairly", label: "Fairly Active (min)", color: "var(--color-chart-2)" },
+  { key: "lightly", label: "Lightly Active (min)", color: "var(--color-chart-3)" },
+];
+
+const AZM_DEFS: SeriesDef[] = [
+  { key: "FAT_BURN", label: "Fat Burn Zone", color: "var(--color-chart-3)" },
+  { key: "CARDIO", label: "Cardio Zone", color: "var(--color-primary)" },
+  { key: "PEAK", label: "Peak Zone", color: "var(--color-destructive)" },
+];
+
+const SLEEP_TABLE_COLUMNS: { key: string; label: string; align?: "left" | "right" }[] = [
+  { key: "date", label: "Date" },
+  { key: "score", label: "Score", align: "right" },
+  { key: "durationMin", label: "Total Min", align: "right" },
+  { key: "deepMin", label: "Deep (m)", align: "right" },
+  { key: "remMin", label: "REM (m)", align: "right" },
+  { key: "lightMin", label: "Light (m)", align: "right" },
+  { key: "efficiency", label: "Efficiency %", align: "right" },
+];
+
+// Explorer tab: isolated + memoized so typing/selecting elsewhere doesn't rebuild it.
+function ExplorerTable({
+  dataset,
+  series,
+}: {
+  dataset: string;
+  series: Record<string, SeriesPoint[]>;
+}) {
+  const { activeSeries, unit } = React.useMemo(() => {
+    switch (dataset) {
+      case "steps":
+        return { activeSeries: series.fSteps, unit: "steps" };
+      case "calories":
+        return { activeSeries: series.fCalories, unit: "kcal" };
+      case "distance":
+        return { activeSeries: series.fDistance, unit: "km" };
+      case "sleepScore":
+        return { activeSeries: series.fSleepScore, unit: "score" };
+      case "restingHR":
+        return { activeSeries: series.fRhr, unit: "bpm" };
+      case "hrv":
+        return { activeSeries: series.fHrv, unit: "ms" };
+      case "vo2max":
+        return { activeSeries: series.fVo2, unit: "ml/kg" };
+      case "spo2":
+        return { activeSeries: series.fSpo2, unit: "%" };
+      case "weight":
+        return { activeSeries: series.fWeight, unit: "kg" };
+      case "stressScore":
+        return { activeSeries: series.fStress, unit: "pts" };
+      default:
+        return { activeSeries: [] as SeriesPoint[], unit: "" };
+    }
+  }, [dataset, series]);
+
+  const columns = React.useMemo(
+    () => [
+      { key: "date", label: "Date" },
+      { key: "value", label: `Value (${unit})`, align: "right" as const },
+    ],
+    [unit]
+  );
+  const rows = React.useMemo(() => rowsFromSeries(activeSeries), [activeSeries]);
+
+  return (
+    <DataTable
+      title={`${dataset} Table (${activeSeries.length} rows)`}
+      columns={columns}
+      rows={rows}
+    />
+  );
 }
 
 export function Dashboard({ data }: { data: HealthData }) {
@@ -91,49 +183,91 @@ export function Dashboard({ data }: { data: HealthData }) {
     return opts.weeks.filter((w) => year === "all" || w.startsWith(year));
   }, [granularity, year, opts]);
 
-  React.useEffect(() => {
-    if (granularity === "all") {
-      setPeriod("all");
-      return;
-    }
-    if (!periodOptions.includes(period)) {
-      setPeriod(periodOptions[0] ?? "all");
-    }
-  }, [periodOptions, granularity, period]);
+  // Derive the effective period during render (no setState-in-effect cascade):
+  // when options change, filtering falls back to the first option automatically.
+  const effectivePeriod =
+    granularity === "all" ? "all" : periodOptions.includes(period) ? period : (periodOptions[0] ?? "all");
 
-  const filter: FilterState = { preset, granularity, year, period };
+  const filter: FilterState = React.useMemo(
+    () => ({ preset, granularity, year, period: effectivePeriod }),
+    [preset, granularity, year, effectivePeriod]
+  );
 
-  // ---- Filtered series ----
-  const fSteps = filterDaily(derived.dailyStepsSeries, filter, opts.maxDate);
-  const fCalories = filterDaily(derived.dailyCaloriesSeries, filter, opts.maxDate);
-  const fDistance = filterDaily(derived.dailyDistanceSeries, filter, opts.maxDate);
-  const fIntensity = filterIntensity(derived.dailyActivityIntensity, filter, opts.maxDate);
-  const fWorkouts = filterWorkouts(derived.workouts, filter, opts.maxDate);
-  const fSleepStages = filterSleepStages(derived.sleepStagesDetailed, filter, opts.maxDate);
+  // ---- Filtered series (single memo: ~20 array scans run only on filter/data change) ----
+  const {
+    fSteps, fCalories, fDistance, fIntensity, fWorkouts, fSleepStages,
+    fSleepScore, fDeep, fSleepRhr, fStress, fRhr, fHrv,
+    fSpo2, fResp, fTemp, fVo2, fWeight, fAzb, fGeo,
+  } = React.useMemo(() => {
+    const max = opts.maxDate;
+    return {
+      fSteps: filterDaily(derived.dailyStepsSeries, filter, max),
+      fCalories: filterDaily(derived.dailyCaloriesSeries, filter, max),
+      fDistance: filterDaily(derived.dailyDistanceSeries, filter, max),
+      fIntensity: filterIntensity(derived.dailyActivityIntensity, filter, max),
+      fWorkouts: filterWorkouts(derived.workouts, filter, max),
+      fSleepStages: filterSleepStages(derived.sleepStagesDetailed, filter, max),
+      fSleepScore: filterDaily(D.sleepScore.series, filter, max),
+      fDeep: filterDaily(D.sleepDeep.series, filter, max),
+      fSleepRhr: filterDaily(D.sleepRhr.series, filter, max),
+      fStress: filterDaily(D.stressScore.series, filter, max),
+      fRhr: filterDaily(D.restingHR.series, filter, max),
+      fHrv: filterDaily(D.hrv.series, filter, max),
+      fSpo2: filterDaily(D.spo2.series, filter, max),
+      fResp: filterDaily(D.respiratory.series, filter, max),
+      fTemp: filterDaily(D.sleepTemp.series, filter, max),
+      fVo2: filterDaily(D.vo2max.series, filter, max),
+      fWeight: filterDaily(D.weight.series, filter, max),
+      fAzb: filterMonthly(derived.azmSeries, filter, max),
+      fGeo: filterGeo(derived.geoPoints, filter, max),
+    };
+  }, [derived, D, filter, opts.maxDate]);
 
-  const fSleepScore = filterDaily(D.sleepScore.series, filter, opts.maxDate);
-  const fDeep = filterDaily(D.sleepDeep.series, filter, opts.maxDate);
-  const fSleepRhr = filterDaily(D.sleepRhr.series, filter, opts.maxDate);
-  const fStress = filterDaily(D.stressScore.series, filter, opts.maxDate);
-  const fRhr = filterDaily(D.restingHR.series, filter, opts.maxDate);
-  const fHrv = filterDaily(D.hrv.series, filter, opts.maxDate);
-  const fReadiness = filterDaily(D.readiness.series, filter, opts.maxDate);
-  const fSpo2 = filterDaily(D.spo2.series, filter, opts.maxDate);
-  const fResp = filterDaily(D.respiratory.series, filter, opts.maxDate);
-  const fTemp = filterDaily(D.sleepTemp.series, filter, opts.maxDate);
-  const fVo2 = filterDaily(D.vo2max.series, filter, opts.maxDate);
-  const fWeight = filterDaily(D.weight.series, filter, opts.maxDate);
-  const fElev = filterDaily(D.elevation.series, filter, opts.maxDate);
+  // ---- Summaries (computed once per filter change, not per JSX call-site) ----
+  const {
+    sumSteps, sumCalories, sumSleepScore, sumRhr, sumHrv, sumVo2, sumSpo2,
+    sumWeight, sumSleepRhr,
+  } = React.useMemo(
+    () => ({
+      sumSteps: summarize(fSteps),
+      sumCalories: summarize(fCalories),
+      sumSleepScore: summarize(fSleepScore),
+      sumRhr: summarize(fRhr),
+      sumHrv: summarize(fHrv),
+      sumVo2: summarize(fVo2),
+      sumSpo2: summarize(fSpo2),
+      sumWeight: summarize(fWeight),
+      sumSleepRhr: summarize(fSleepRhr),
+    }),
+    [fSteps, fCalories, fSleepScore, fRhr, fHrv, fVo2, fSpo2, fWeight, fSleepRhr]
+  );
 
-  const fAzb = filterMonthly(derived.azmSeries, filter, opts.maxDate);
-  const fStepsMonthly = filterMonthly(derived.stepsMonthly, filter, opts.maxDate);
-  const fCalsMonthly = filterMonthly(derived.caloriesMonthly, filter, opts.maxDate);
-  const fGeo = filterGeo(derived.geoPoints, filter, opts.maxDate);
+  // ---- Chart-ready shapes (stable references keep Recharts/TanStack memoized) ----
+  const {
+    cSteps, cCalories, cSleepScore, cSleepRhr, cDeep, cTemp, cRhr, cHrv,
+    cVo2, cSpo2, cResp, cStress,
+  } = React.useMemo(
+    () => ({
+      cSteps: toChart(fSteps),
+      cCalories: toChart(fCalories),
+      cSleepScore: toChart(fSleepScore),
+      cSleepRhr: toChart(fSleepRhr),
+      cDeep: toChart(fDeep),
+      cTemp: toChart(fTemp),
+      cRhr: toChart(fRhr),
+      cHrv: toChart(fHrv),
+      cVo2: toChart(fVo2),
+      cSpo2: toChart(fSpo2),
+      cResp: toChart(fResp),
+      cStress: toChart(fStress),
+    }),
+    [fSteps, fCalories, fSleepScore, fSleepRhr, fDeep, fTemp, fRhr, fHrv, fVo2, fSpo2, fResp, fStress]
+  );
 
   // ---- Health Score & Insights ----
   const healthScore = React.useMemo(
-    () => computeHealthScore(fSleepScore, fSteps, fRhr, fStress, fReadiness),
-    [fSleepScore, fSteps, fRhr, fStress, fReadiness]
+    () => computeHealthScore(fSleepScore, fSteps, fRhr, fStress),
+    [fSleepScore, fSteps, fRhr, fStress]
   );
 
   const weekdayComparison = React.useMemo(
@@ -147,83 +281,88 @@ export function Dashboard({ data }: { data: HealthData }) {
   );
 
   // Sleep Stages Stacked Data
-  const sleepStagesChartData = fSleepStages.map((s) => ({
-    date: s.date,
-    deep: s.deepMin,
-    rem: s.remMin,
-    light: s.lightMin,
-    wake: s.wakeMin,
-  }));
-
-  const sleepStagesDefs: SeriesDef[] = [
-    { key: "deep", label: "Deep Sleep", color: "var(--color-primary)" },
-    { key: "rem", label: "REM Sleep", color: "var(--color-chart-2)" },
-    { key: "light", label: "Light Sleep", color: "var(--color-chart-3)" },
-    { key: "wake", label: "Awake / Restless", color: "var(--color-chart-5)" },
-  ];
+  const sleepStagesChartData = React.useMemo(
+    () =>
+      fSleepStages.map((s) => ({
+        date: s.date,
+        deep: s.deepMin,
+        rem: s.remMin,
+        light: s.lightMin,
+        wake: s.wakeMin,
+      })),
+    [fSleepStages]
+  );
 
   // Activity Intensity Chart Data
-  const intensityChartData = fIntensity.map((i) => ({
-    date: i.date,
-    very: i.very,
-    fairly: i.fairly,
-    lightly: i.lightly,
-    sedentary: Math.round(i.sedentary / 60),
-  }));
-
-  const intensityDefs: SeriesDef[] = [
-    { key: "very", label: "Very Active (min)", color: "var(--color-chart-1)" },
-    { key: "fairly", label: "Fairly Active (min)", color: "var(--color-chart-2)" },
-    { key: "lightly", label: "Lightly Active (min)", color: "var(--color-chart-3)" },
-  ];
+  const intensityChartData = React.useMemo(
+    () =>
+      fIntensity.map((i) => ({
+        date: i.date,
+        very: i.very,
+        fairly: i.fairly,
+        lightly: i.lightly,
+      })),
+    [fIntensity]
+  );
 
   // AZM Funnel
-  const azmFunnel = [
-    { stage: "Months tracked", value: fAzb.length },
-    { stage: "Fat burn", value: fAzb.filter((m) => m.FAT_BURN > 0).length },
-    { stage: "Cardio", value: fAzb.filter((m) => m.CARDIO > 0).length },
-    { stage: "Peak", value: fAzb.filter((m) => m.PEAK > 0).length },
-  ];
+  const azmFunnel = React.useMemo(
+    () => [
+      { stage: "Months tracked", value: fAzb.length },
+      { stage: "Fat burn", value: fAzb.filter((m) => m.FAT_BURN > 0).length },
+      { stage: "Cardio", value: fAzb.filter((m) => m.CARDIO > 0).length },
+      { stage: "Peak", value: fAzb.filter((m) => m.PEAK > 0).length },
+    ],
+    [fAzb]
+  );
 
-  // AZM Defs
-  const azmDefs: SeriesDef[] = [
-    { key: "FAT_BURN", label: "Fat Burn Zone", color: "var(--color-chart-3)" },
-    { key: "CARDIO", label: "Cardio Zone", color: "var(--color-primary)" },
-    { key: "PEAK", label: "Peak Zone", color: "var(--color-destructive)" },
-  ];
+  const stressStatusData = React.useMemo(
+    () => Object.entries(derived.stressStatus).map(([name, value]) => ({ name, value })),
+    [derived.stressStatus]
+  );
+  const moodData = React.useMemo(
+    () => Object.entries(derived.moodCounts).map(([name, value]) => ({ name, value })),
+    [derived.moodCounts]
+  );
 
-  const stressStatusData = Object.entries(derived.stressStatus).map(([name, value]) => ({ name, value }));
-  const moodData = Object.entries(derived.moodCounts).map(([name, value]) => ({ name, value }));
+  const weekdayChartData = React.useMemo(
+    () => [
+      {
+        category: "Steps (Avg)",
+        Weekday: weekdayComparison.weekdayAvgSteps,
+        Weekend: weekdayComparison.weekendAvgSteps,
+      },
+      {
+        category: "Sleep (Hours)",
+        Weekday: Math.round(weekdayComparison.weekdayAvgSleepHours * 10) / 10,
+        Weekend: Math.round(weekdayComparison.weekendAvgSleepHours * 10) / 10,
+      },
+      {
+        category: "Calories (kcal)",
+        Weekday: weekdayComparison.weekdayAvgCalories,
+        Weekend: weekdayComparison.weekendAvgCalories,
+      },
+    ],
+    [weekdayComparison]
+  );
 
-  const weekdayChartData = [
-    {
-      category: "Steps (Avg)",
-      Weekday: weekdayComparison.weekdayAvgSteps,
-      Weekend: weekdayComparison.weekendAvgSteps,
-    },
-    {
-      category: "Sleep (Hours)",
-      Weekday: Math.round(weekdayComparison.weekdayAvgSleepHours * 10) / 10,
-      Weekend: Math.round(weekdayComparison.weekendAvgSleepHours * 10) / 10,
-    },
-    {
-      category: "Calories (kcal)",
-      Weekday: weekdayComparison.weekdayAvgCalories,
-      Weekend: weekdayComparison.weekendAvgCalories,
-    },
-  ];
+  const explorerSeries = React.useMemo(
+    () => ({ fSteps, fCalories, fDistance, fSleepScore, fRhr, fHrv, fVo2, fSpo2, fWeight, fStress }),
+    [fSteps, fCalories, fDistance, fSleepScore, fRhr, fHrv, fVo2, fSpo2, fWeight, fStress]
+  );
 
   const label = periodLabel(filter);
 
   // Quick export function
-  const handleExportJSON = () => {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const handleExportJSON = React.useCallback(() => {
+    const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `google-health-export-${new Date().toISOString().slice(0, 10)}.json`;
+    URL.revokeObjectURL(url);
     a.click();
-  };
+  }, [data]);
 
   return (
     <main className="min-h-screen bg-background text-foreground pb-16">
@@ -273,15 +412,7 @@ export function Dashboard({ data }: { data: HealthData }) {
               <span className="mr-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Range:
               </span>
-              {(
-                [
-                  { id: "all", label: "All Time" },
-                  { id: "1y", label: "1 Year" },
-                  { id: "90d", label: "90 Days" },
-                  { id: "30d", label: "30 Days" },
-                  { id: "7d", label: "7 Days" },
-                ] as const
-              ).map((p) => (
+              {PRESET_BUTTONS.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => {
@@ -337,7 +468,7 @@ export function Dashboard({ data }: { data: HealthData }) {
               )}
 
               {granularity !== "all" && (
-                <Select value={period} onValueChange={(v) => setPeriod(v ?? "all")}>
+                <Select value={effectivePeriod} onValueChange={(v) => setPeriod(v ?? "all")}>
                   <SelectTrigger className="h-8.5 w-[140px] rounded-xl text-xs">
                     <SelectValue placeholder="Select period" />
                   </SelectTrigger>
@@ -407,81 +538,81 @@ export function Dashboard({ data }: { data: HealthData }) {
             <section className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-4">
               <MetricCard
                 label="Daily Steps"
-                value={summarize(fSteps)?.latest ?? "—"}
+                value={sumSteps?.latest ?? "—"}
                 unit="steps"
-                avg={summarize(fSteps)?.avg}
-                min={summarize(fSteps)?.min}
-                max={summarize(fSteps)?.max}
-                trendPct={summarize(fSteps)?.trendPct}
+                avg={sumSteps?.avg}
+                min={sumSteps?.min}
+                max={sumSteps?.max}
+                trendPct={sumSteps?.trendPct}
                 icon={<Footprints className="h-4 w-4" />}
                 sparklineData={fSteps}
-                statusLabel={(summarize(fSteps)?.avg ?? 0) >= 10000 ? "Goal Met" : "Active"}
+                statusLabel={(sumSteps?.avg ?? 0) >= 10000 ? "Goal Met" : "Active"}
               />
               <MetricCard
                 label="Daily Calories"
-                value={summarize(fCalories)?.latest ?? "—"}
+                value={sumCalories?.latest ?? "—"}
                 unit="kcal"
-                avg={summarize(fCalories)?.avg}
-                trendPct={summarize(fCalories)?.trendPct}
+                avg={sumCalories?.avg}
+                trendPct={sumCalories?.trendPct}
                 icon={<Flame className="h-4 w-4" />}
                 sparklineData={fCalories}
                 statusLabel="Metabolic"
               />
               <MetricCard
                 label="Sleep Score"
-                value={summarize(fSleepScore)?.latest ?? "—"}
+                value={sumSleepScore?.latest ?? "—"}
                 unit="/100"
-                avg={summarize(fSleepScore)?.avg}
-                trendPct={summarize(fSleepScore)?.trendPct}
+                avg={sumSleepScore?.avg}
+                trendPct={sumSleepScore?.trendPct}
                 icon={<Moon className="h-4 w-4" />}
                 sparklineData={fSleepScore}
-                statusLabel={(summarize(fSleepScore)?.avg ?? 0) >= 80 ? "Optimal" : "Normal"}
+                statusLabel={(sumSleepScore?.avg ?? 0) >= 80 ? "Optimal" : "Normal"}
               />
               <MetricCard
                 label="Resting Heart Rate"
-                value={summarize(fRhr)?.latest ?? "—"}
+                value={sumRhr?.latest ?? "—"}
                 unit="bpm"
-                avg={summarize(fRhr)?.avg}
-                trendPct={summarize(fRhr)?.trendPct}
+                avg={sumRhr?.avg}
+                trendPct={sumRhr?.trendPct}
                 icon={<Heart className="h-4 w-4" />}
                 sparklineData={fRhr}
-                statusLabel={(summarize(fRhr)?.latest ?? 70) <= 65 ? "Aerobic Recovery" : "Elevated"}
+                statusLabel={(sumRhr?.latest ?? 70) <= 65 ? "Aerobic Recovery" : "Elevated"}
               />
               <MetricCard
                 label="Heart Rate Variability"
-                value={summarize(fHrv)?.latest ?? "—"}
+                value={sumHrv?.latest ?? "—"}
                 unit="ms"
-                avg={summarize(fHrv)?.avg}
-                trendPct={summarize(fHrv)?.trendPct}
+                avg={sumHrv?.avg}
+                trendPct={sumHrv?.trendPct}
                 icon={<Zap className="h-4 w-4" />}
                 sparklineData={fHrv}
                 statusLabel="Nervous System"
               />
               <MetricCard
                 label="VO2 Max (Cardio)"
-                value={summarize(fVo2)?.latest ?? "—"}
+                value={sumVo2?.latest ?? "—"}
                 unit="ml/kg/min"
-                avg={summarize(fVo2)?.avg}
+                avg={sumVo2?.avg}
                 icon={<Gauge className="h-4 w-4" />}
                 sparklineData={fVo2}
                 statusLabel="Cardio Fitness"
               />
               <MetricCard
                 label="Oxygen Saturation"
-                value={summarize(fSpo2)?.latest ?? "—"}
+                value={sumSpo2?.latest ?? "—"}
                 unit="%"
-                avg={summarize(fSpo2)?.avg}
+                avg={sumSpo2?.avg}
                 icon={<Wind className="h-4 w-4" />}
                 sparklineData={fSpo2}
                 statusLabel="SpO2 Normal"
               />
               <MetricCard
                 label="Body Weight"
-                value={summarize(fWeight)?.latest ?? "—"}
+                value={sumWeight?.latest ?? "—"}
                 unit="kg"
-                avg={summarize(fWeight)?.avg}
-                min={summarize(fWeight)?.min}
-                max={summarize(fWeight)?.max}
+                avg={sumWeight?.avg}
+                min={sumWeight?.min}
+                max={sumWeight?.max}
                 icon={<Scale className="h-4 w-4" />}
                 sparklineData={fWeight}
                 statusLabel="Stable"
@@ -517,7 +648,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fSteps)}
+                    data={cSteps}
                     xKey="date"
                     series={[{ key: "value", label: "Steps" }]}
                     type="area"
@@ -559,7 +690,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fSleepScore)}
+                    data={cSleepScore}
                     xKey="date"
                     series={[{ key: "value", label: "Sleep Score" }]}
                     type="area"
@@ -577,12 +708,12 @@ export function Dashboard({ data }: { data: HealthData }) {
                     Resting Heart Rate during Sleep
                   </CardTitle>
                   <CardDescription className="text-xs text-muted-foreground">
-                    Nocturnal cardiac resting rate ({summarize(fSleepRhr)?.avg} bpm avg).
+                    Nocturnal cardiac resting rate ({sumSleepRhr?.avg} bpm avg).
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fSleepRhr)}
+                    data={cSleepRhr}
                     xKey="date"
                     series={[{ key: "value", label: "Sleep RHR" }]}
                     type="line"
@@ -613,7 +744,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 <StackedAreaChart
                   data={sleepStagesChartData}
                   xKey="date"
-                  series={sleepStagesDefs}
+                  series={SLEEP_STAGES_DEFS}
                   unit="min"
                   height={300}
                 />
@@ -629,7 +760,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fDeep)}
+                    data={cDeep}
                     xKey="date"
                     series={[{ key: "value", label: "Deep Sleep" }]}
                     type="area"
@@ -647,7 +778,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fTemp)}
+                    data={cTemp}
                     xKey="date"
                     series={[{ key: "value", label: "Temp" }]}
                     type="line"
@@ -660,15 +791,7 @@ export function Dashboard({ data }: { data: HealthData }) {
 
             <DataTable
               title="Detailed Sleep Records"
-              columns={[
-                { key: "date", label: "Date" },
-                { key: "score", label: "Score", align: "right" },
-                { key: "durationMin", label: "Total Min", align: "right" },
-                { key: "deepMin", label: "Deep (m)", align: "right" },
-                { key: "remMin", label: "REM (m)", align: "right" },
-                { key: "lightMin", label: "Light (m)", align: "right" },
-                { key: "efficiency", label: "Efficiency %", align: "right" },
-              ]}
+              columns={SLEEP_TABLE_COLUMNS}
               rows={fSleepStages}
             />
           </TabsContent>
@@ -682,12 +805,12 @@ export function Dashboard({ data }: { data: HealthData }) {
                     Daily Steps Trend
                   </CardTitle>
                   <CardDescription className="text-xs text-muted-foreground">
-                    {summarize(fSteps)?.count} days recorded · avg {summarize(fSteps)?.avg?.toLocaleString()} steps.
+                    {sumSteps?.count} days recorded · avg {sumSteps?.avg?.toLocaleString()} steps.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fSteps)}
+                    data={cSteps}
                     xKey="date"
                     series={[{ key: "value", label: "Steps" }]}
                     type="area"
@@ -710,7 +833,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fCalories)}
+                    data={cCalories}
                     xKey="date"
                     series={[{ key: "value", label: "Calories" }]}
                     type="area"
@@ -734,7 +857,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 <StackedAreaChart
                   data={intensityChartData}
                   xKey="date"
-                  series={intensityDefs}
+                  series={INTENSITY_DEFS}
                   unit="min"
                   height={280}
                 />
@@ -751,7 +874,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
-                <MonthlyBarChart data={fAzb} xKey="month" series={azmDefs} stacked height={280} />
+                <MonthlyBarChart data={fAzb} xKey="month" series={AZM_DEFS} stacked height={280} />
               </CardContent>
             </Card>
 
@@ -767,12 +890,12 @@ export function Dashboard({ data }: { data: HealthData }) {
                     Resting Heart Rate Trend (Daily)
                   </CardTitle>
                   <CardDescription className="text-xs text-muted-foreground">
-                    {summarize(fRhr)?.avg} bpm average · lower resting rate reflects cardio endurance.
+                    {sumRhr?.avg} bpm average · lower resting rate reflects cardio endurance.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fRhr)}
+                    data={cRhr}
                     xKey="date"
                     series={[{ key: "value", label: "Resting HR" }]}
                     type="line"
@@ -793,7 +916,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fHrv)}
+                    data={cHrv}
                     xKey="date"
                     series={[{ key: "value", label: "HRV" }]}
                     type="area"
@@ -814,7 +937,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fVo2)}
+                    data={cVo2}
                     xKey="date"
                     series={[{ key: "value", label: "VO2 Max" }]}
                     type="line"
@@ -833,7 +956,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fSpo2)}
+                    data={cSpo2}
                     xKey="date"
                     series={[{ key: "value", label: "SpO2" }]}
                     type="line"
@@ -852,7 +975,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fResp)}
+                    data={cResp}
                     xKey="date"
                     series={[{ key: "value", label: "Resp Rate" }]}
                     type="area"
@@ -878,7 +1001,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </CardHeader>
                 <CardContent className="p-0">
                   <TimeSeriesChart
-                    data={toChart(fStress)}
+                    data={cStress}
                     xKey="date"
                     series={[{ key: "value", label: "Stress Score" }]}
                     type="area"
@@ -1002,63 +1125,7 @@ export function Dashboard({ data }: { data: HealthData }) {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                {(() => {
-                  let activeSeries: SeriesPoint[] = [];
-                  let unit = "";
-                  switch (explorerDataset) {
-                    case "steps":
-                      activeSeries = fSteps;
-                      unit = "steps";
-                      break;
-                    case "calories":
-                      activeSeries = fCalories;
-                      unit = "kcal";
-                      break;
-                    case "distance":
-                      activeSeries = fDistance;
-                      unit = "km";
-                      break;
-                    case "sleepScore":
-                      activeSeries = fSleepScore;
-                      unit = "score";
-                      break;
-                    case "restingHR":
-                      activeSeries = fRhr;
-                      unit = "bpm";
-                      break;
-                    case "hrv":
-                      activeSeries = fHrv;
-                      unit = "ms";
-                      break;
-                    case "vo2max":
-                      activeSeries = fVo2;
-                      unit = "ml/kg";
-                      break;
-                    case "spo2":
-                      activeSeries = fSpo2;
-                      unit = "%";
-                      break;
-                    case "weight":
-                      activeSeries = fWeight;
-                      unit = "kg";
-                      break;
-                    case "stressScore":
-                      activeSeries = fStress;
-                      unit = "pts";
-                      break;
-                  }
-
-                  return (
-                    <DataTable
-                      title={`${explorerDataset} Table (${activeSeries.length} rows)`}
-                      columns={[
-                        { key: "date", label: "Date" },
-                        { key: "value", label: `Value (${unit})`, align: "right" },
-                      ]}
-                      rows={rowsFromSeries(activeSeries)}
-                    />
-                  );
-                })()}
+                <ExplorerTable dataset={explorerDataset} series={explorerSeries} />
               </CardContent>
             </Card>
           </TabsContent>

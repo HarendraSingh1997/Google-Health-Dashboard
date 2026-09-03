@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { FunnelChart, Funnel, LabelList, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { colorFor } from "@/lib/palette";
 
@@ -9,9 +8,10 @@ export function FunnelChartView({ data }: { data: { stage: string; value: number
     <div className="w-full min-w-0 h-[260px]">
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
       <FunnelChart>
-        <Tooltip content={({ active, payload }: any) => {
+        <Tooltip content={({ active, payload }) => {
           if (!active || !payload?.length) return null;
-          const p = payload[0].payload;
+          const p = payload[0]?.payload as { stage?: string; value?: number | string } | undefined;
+          if (!p) return null;
           return (
             <div className="rounded-md border bg-white p-2 text-xs shadow">
               <div className="font-medium">{p.stage}</div>

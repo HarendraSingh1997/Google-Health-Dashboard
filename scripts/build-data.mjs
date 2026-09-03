@@ -1,8 +1,24 @@
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = "/Users/harendrasingh/projects/Google-Health-Data/Takeout 2/Google Health";
 const OUT_DIR = join(process.cwd(), "public", "data");
+const OUT_FILE = join(OUT_DIR, "health.json");
+
+// Skip the expensive full aggregation when the output is newer than the
+// source export (predev/prebuild run on every dev/build). Use --force to rebuild.
+if (!process.argv.includes("--force")) {
+  try {
+    const outStat = statSync(OUT_FILE);
+    const rootStat = statSync(ROOT);
+    if (outStat.mtimeMs > rootStat.mtimeMs) {
+      console.log("✓ health.json is up to date, skipping rebuild (use --force to rebuild)");
+      process.exit(0);
+    }
+  } catch {
+    // Output or source missing — fall through to full rebuild.
+  }
+}
 
 // ---- CSV parser ----
 function parseCSV(text) {
@@ -90,10 +106,16 @@ function dailySeries(relPath, valueCol, { transform } = {}) {
 
 function summarize(series) {
   if (!series || !series.length) return null;
-  const vals = series.map((s) => s.value);
-  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
+  let sum = 0;
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < series.length; i++) {
+    const v = series[i].value;
+    sum += v;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  const avg = sum / series.length;
   const first = series[0];
   const last = series[series.length - 1];
   const trendPct =
@@ -124,7 +146,7 @@ function parseDailyJSONSum(prefix, valScale = 1) {
         if (!item.dateTime) continue;
         const m = /^(\d{2})\/(\d{2})\/(\d{2})/.exec(item.dateTime);
         if (!m) continue;
-        const [_, mm, dd, yy] = m;
+        const [, mm, dd, yy] = m;
         const date = `20${yy}-${mm}-${dd}`;
         const val = (parseFloat(item.value) || 0) * valScale;
         daily[date] = (daily[date] || 0) + val;
@@ -559,7 +581,7 @@ const derived = {
 };
 
 mkdirSync(OUT_DIR, { recursive: true });
-writeFileSync(join(OUT_DIR, "health.json"), JSON.stringify({ datasets, derived }, null, 0));
+writeFileSync(OUT_FILE, JSON.stringify({ datasets, derived }, null, 0));
 
 console.log("✓ Successfully generated health.json");
 console.log("Daily steps points:", dailyStepsSeries.length);

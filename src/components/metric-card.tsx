@@ -14,7 +14,6 @@ interface MetricCardProps {
   min?: number;
   max?: number;
   trendPct?: number;
-  color?: string;
   icon?: React.ReactNode;
   sparklineData?: SeriesPoint[];
   statusLabel?: string;
@@ -28,7 +27,6 @@ export function MetricCard({
   min,
   max,
   trendPct,
-  color = "currentColor",
   icon,
   sparklineData,
   statusLabel,

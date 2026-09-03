@@ -22,7 +22,10 @@ export interface Column {
   align?: "left" | "right";
 }
 
-function buildColumnDefs(columns: Column[]): ColumnDef<Record<string, any>>[] {
+export type TableCellValue = string | number | boolean | null | undefined;
+export type TableRowData = Record<string, TableCellValue>;
+
+function buildColumnDefs(columns: Column[]): ColumnDef<TableRowData>[] {
   return columns.map((c) => ({
     accessorKey: c.key,
     header: ({ column }) => (
@@ -56,13 +59,16 @@ export function DataTable({
 }: {
   title: string;
   columns: Column[];
-  rows: Record<string, any>[];
+  rows: TableRowData[];
   pageSize?: number;
 }) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
+  // Memoize defs: a fresh array each render would bust useReactTable's
+  // memoization and reset sorting/pagination on every parent re-render.
+  const columnDefs = React.useMemo(() => buildColumnDefs(columns), [columns]);
   const table = useReactTable({
     data: rows,
-    columns: buildColumnDefs(columns),
+    columns: columnDefs,
     state: { sorting },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),

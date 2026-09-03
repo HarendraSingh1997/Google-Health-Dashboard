@@ -23,15 +23,17 @@ export interface Dataset {
   series: SeriesPoint[];
 }
 
-export interface AZMPoint {
+// `type` (not `interface`) so monthly rows satisfy chart index signatures.
+export type AZMPoint = {
   month: string;
   FAT_BURN: number;
   CARDIO: number;
   PEAK: number;
   total: number;
-}
+};
 
-export interface SleepStageLog {
+// `type` (not `interface`) so log rows satisfy table index signatures.
+export type SleepStageLog = {
   date: string;
   startTime: string;
   endTime: string;
@@ -45,7 +47,7 @@ export interface SleepStageLog {
   wakeMin: number;
   score: number | null;
   rhr: number | null;
-}
+};
 
 export interface WorkoutLog {
   id: string;

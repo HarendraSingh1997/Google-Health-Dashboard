@@ -37,8 +37,7 @@ export function computeHealthScore(
   sleepSeries: SeriesPoint[],
   stepsSeries: SeriesPoint[],
   rhrSeries: SeriesPoint[],
-  stressSeries: SeriesPoint[],
-  readinessSeries: SeriesPoint[]
+  stressSeries: SeriesPoint[]
 ): HealthScoreResult {
   // 1. Sleep score (average of recent or filtered)
   const avgSleep = sleepSeries.length
@@ -121,6 +120,22 @@ export function computeHealthScore(
   };
 }
 
+// 0 = Sunday … 6 = Saturday (UTC), computed arithmetically — no Date allocation
+// per point, and immune to local-timezone day shifts.
+function dayOfWeekUTC(dateStr: string): number {
+  const y = +dateStr.slice(0, 4);
+  const m = +dateStr.slice(5, 7);
+  const d = +dateStr.slice(8, 10);
+  const t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+  const yy = m < 3 ? y - 1 : y;
+  return (yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) + t[m - 1] + d) % 7;
+}
+
+function isWeekendUTC(dateStr: string): boolean {
+  const day = dayOfWeekUTC(dateStr);
+  return day === 0 || day === 6;
+}
+
 export function computeWeekdayVsWeekend(
   steps: SeriesPoint[],
   sleepLogs: SleepStageLog[],
@@ -128,8 +143,7 @@ export function computeWeekdayVsWeekend(
 ): DayComparison {
   let wdSteps = 0, wdStepsN = 0, weSteps = 0, weStepsN = 0;
   for (const s of steps) {
-    const day = new Date(s.date).getDay();
-    const isWeekend = day === 0 || day === 6;
+    const isWeekend = isWeekendUTC(s.date);
     if (isWeekend) {
       weSteps += s.value;
       weStepsN++;
@@ -141,8 +155,7 @@ export function computeWeekdayVsWeekend(
 
   let wdSleep = 0, wdSleepN = 0, weSleep = 0, weSleepN = 0;
   for (const s of sleepLogs) {
-    const day = new Date(s.date).getDay();
-    const isWeekend = day === 0 || day === 6;
+    const isWeekend = isWeekendUTC(s.date);
     if (isWeekend) {
       weSleep += s.minutesAsleep / 60;
       weSleepN++;
@@ -154,8 +167,7 @@ export function computeWeekdayVsWeekend(
 
   let wdCal = 0, wdCalN = 0, weCal = 0, weCalN = 0;
   for (const c of calories) {
-    const day = new Date(c.date).getDay();
-    const isWeekend = day === 0 || day === 6;
+    const isWeekend = isWeekendUTC(c.date);
     if (isWeekend) {
       weCal += c.value;
       weCalN++;

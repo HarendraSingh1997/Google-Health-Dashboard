@@ -134,8 +134,17 @@ export function filterGeo(geo: GeoPoint[], f: FilterState, maxDate?: string): Ge
 
 export function summarize(series: SeriesPoint[]) {
   if (!series || !series.length) return null;
-  const vals = series.map((s) => s.value);
-  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  // Single pass: avoids spread-operator stack risk on large arrays.
+  let sum = 0;
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < series.length; i++) {
+    const v = series[i].value;
+    sum += v;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  const avg = sum / series.length;
   const first = series[0];
   const last = series[series.length - 1];
   const trendPct =
@@ -143,8 +152,8 @@ export function summarize(series: SeriesPoint[]) {
   return {
     count: series.length,
     avg: +avg.toFixed(2),
-    min: +Math.min(...vals).toFixed(2),
-    max: +Math.max(...vals).toFixed(2),
+    min: +min.toFixed(2),
+    max: +max.toFixed(2),
     latest: +last.value.toFixed(2),
     firstDate: first.date,
     lastDate: last.date,

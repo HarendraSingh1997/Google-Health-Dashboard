@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import { useId } from "react";
 import {
   CartesianGrid,
   Line,
@@ -29,6 +29,21 @@ export interface SeriesDef {
   type?: "line" | "area" | "bar";
 }
 
+export interface ChartDatum {
+  date?: string;
+  month?: string;
+  [key: string]: string | number | undefined;
+}
+
+interface TooltipEntry {
+  value?: string | number;
+  name?: string;
+  dataKey?: string | number;
+  color?: string;
+  stroke?: string;
+  fill?: string;
+}
+
 // Custom modern tooltip component using shadcn semantic tokens
 function CustomTooltipContent({
   active,
@@ -37,7 +52,7 @@ function CustomTooltipContent({
   unit,
 }: {
   active?: boolean;
-  payload?: any[];
+  payload?: TooltipEntry[];
   label?: string;
   unit?: string;
 }) {
@@ -84,7 +99,7 @@ export function TimeSeriesChart({
   referenceValue,
   referenceLabel,
 }: {
-  data: any[];
+  data: ChartDatum[];
   xKey: string;
   series: SeriesDef[];
   unit?: string;
@@ -93,6 +108,9 @@ export function TimeSeriesChart({
   referenceValue?: number;
   referenceLabel?: string;
 }) {
+  // Unique gradient prefix: several charts share series keys (e.g. "value"),
+  // and duplicate SVG ids would resolve fills to the wrong chart.
+  const gradPrefix = useId().replace(/[^a-zA-Z0-9]/g, "");
   if (!data || !data.length) {
     return (
       <div className="flex h-48 items-center justify-center text-xs text-muted-foreground">
@@ -112,7 +130,7 @@ export function TimeSeriesChart({
               {series.map((s, i) => {
                 const color = s.color || colorFor(i);
                 return (
-                  <linearGradient key={`grad-${s.key}`} id={`grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient key={`grad-${s.key}`} id={`grad-${gradPrefix}-${s.key}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={color} stopOpacity={0.35} />
                     <stop offset="95%" stopColor={color} stopOpacity={0.0} />
                   </linearGradient>
@@ -135,7 +153,7 @@ export function TimeSeriesChart({
                   dataKey={s.key}
                   type="monotone"
                   stroke={color}
-                  fill={`url(#grad-${s.key})`}
+                  fill={`url(#grad-${gradPrefix}-${s.key})`}
                   strokeWidth={2.5}
                   dot={false}
                   activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }}
@@ -181,12 +199,13 @@ export function StackedAreaChart({
   unit,
   height = 280,
 }: {
-  data: any[];
+  data: ChartDatum[];
   xKey: string;
   series: SeriesDef[];
   unit?: string;
   height?: number;
 }) {
+  const gradPrefix = useId().replace(/[^a-zA-Z0-9]/g, "");
   if (!data || !data.length) {
     return (
       <div className="flex h-48 items-center justify-center text-xs text-muted-foreground">
@@ -205,7 +224,7 @@ export function StackedAreaChart({
             {series.map((s, i) => {
               const color = s.color || colorFor(i);
               return (
-                <linearGradient key={`grad-stacked-${s.key}`} id={`grad-stacked-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                <linearGradient key={`grad-stacked-${s.key}`} id={`grad-stacked-${gradPrefix}-${s.key}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={color} stopOpacity={0.7} />
                   <stop offset="95%" stopColor={color} stopOpacity={0.3} />
                 </linearGradient>
@@ -227,7 +246,7 @@ export function StackedAreaChart({
                 type="monotone"
                 stackId="1"
                 stroke={color}
-                fill={`url(#grad-stacked-${s.key})`}
+                fill={`url(#grad-stacked-${gradPrefix}-${s.key})`}
                 strokeWidth={1.5}
               />
             );
@@ -246,7 +265,7 @@ export function MonthlyBarChart({
   height = 280,
   stacked = false,
 }: {
-  data: any[];
+  data: ChartDatum[];
   xKey: string;
   series: SeriesDef[];
   unit?: string;

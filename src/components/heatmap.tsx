@@ -1,7 +1,5 @@
 "use client";
 
-import * as React from "react";
-
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function Heatmap({
