@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { groupBy, meanBy, orderBy, sumBy } from "lodash";
 import { Waves, Timer, Route, Repeat, Flame, Gauge, Dumbbell } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,60 +34,46 @@ const VOLUME_DEFS = [
   { key: "meters", label: "Meters", color: "var(--color-chart-3)" },
 ];
 
+function swimStats(swims: WorkoutLog[]) {
+  const totalDistKm = sumBy(swims, (w) => w.distanceKm ?? 0);
+  const totalLengths = sumBy(swims, (w) => w.swimLengths ?? 0);
+  const totalMin = sumBy(swims, (w) => w.durationMin);
+  const totalCal = sumBy(swims, (w) => w.calories);
+  const paces = swims
+    .map((w) => w.paceSecPerKm)
+    .filter((p): p is number => p != null && Number.isFinite(p));
+  return {
+    sessions: swims.length,
+    totalDistKm,
+    totalLengths,
+    totalMin,
+    totalCal,
+    avgPace100m: paces.length ? meanBy(paces, (p) => p) / 10 : null,
+  };
+}
+
 export function SwimSection({ workouts }: { workouts: WorkoutLog[] }) {
-  const swims = React.useMemo(
-    () =>
-      workouts
-        .filter((w) => w.activityName === "Swim")
-        .slice()
-        .sort((a, b) => a.date.localeCompare(b.date)),
-    [workouts]
+  const swims = workouts
+    .filter((w) => w.activityName === "Swim")
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const stats = swimStats(swims);
+
+  const distanceData = swims.map((w) => ({ date: w.date, distance: w.distanceKm ?? 0 }));
+  const paceData = swims
+    .filter((w) => w.paceSecPerKm != null)
+    .map((w) => ({ date: w.date, pace: Math.round((w.paceSecPerKm as number) / 10) }));
+  const monthlyVolume = orderBy(
+    Object.entries(groupBy(swims, (w) => w.date.slice(0, 7))).map(([month, ws]) => ({
+      month,
+      lengths: sumBy(ws, (w) => w.swimLengths ?? 0),
+      meters: Math.round(sumBy(ws, (w) => w.distanceKm ?? 0) * 1000),
+    })),
+    ["month"],
+    ["asc"]
   );
 
-  const stats = React.useMemo(() => {
-    const totalDistKm = swims.reduce((a, w) => a + (w.distanceKm ?? 0), 0);
-    const totalLengths = swims.reduce((a, w) => a + (w.swimLengths ?? 0), 0);
-    const totalMin = swims.reduce((a, w) => a + w.durationMin, 0);
-    const totalCal = swims.reduce((a, w) => a + w.calories, 0);
-    const paces = swims
-      .map((w) => w.paceSecPerKm)
-      .filter((p): p is number => p != null && Number.isFinite(p));
-    return {
-      sessions: swims.length,
-      totalDistKm,
-      totalLengths,
-      totalMin,
-      totalCal,
-      avgPace100m: paces.length ? paces.reduce((a, p) => a + p, 0) / paces.length / 10 : null,
-    };
-  }, [swims]);
-
-  const distanceData = React.useMemo(
-    () => swims.map((w) => ({ date: w.date, distance: w.distanceKm ?? 0 })),
-    [swims]
-  );
-  const paceData = React.useMemo(
-    () =>
-      swims
-        .filter((w) => w.paceSecPerKm != null)
-        .map((w) => ({ date: w.date, pace: Math.round((w.paceSecPerKm as number) / 10) })),
-    [swims]
-  );
-  const monthlyVolume = React.useMemo(() => {
-    const byMonth = new Map<string, { lengths: number; meters: number }>();
-    for (const w of swims) {
-      const m = w.date.slice(0, 7);
-      const cur = byMonth.get(m) ?? { lengths: 0, meters: 0 };
-      cur.lengths += w.swimLengths ?? 0;
-      cur.meters += Math.round((w.distanceKm ?? 0) * 1000);
-      byMonth.set(m, cur);
-    }
-    return [...byMonth.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, v]) => ({ month, lengths: v.lengths, meters: v.meters }));
-  }, [swims]);
-
-  const tableRows = React.useMemo(() => swims.slice().reverse(), [swims]);
+  const tableRows = swims.slice().reverse();
 
   if (!swims.length) return null;
 

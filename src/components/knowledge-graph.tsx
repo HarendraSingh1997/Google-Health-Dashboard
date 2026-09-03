@@ -56,6 +56,34 @@ const HEIGHT = 560;
 
 const nodeRadius = (size: number) => Math.max(5, Math.min(22, 3 + size * 0.8));
 
+function filterGraph(
+  graph: { nodes: GraphNode[]; edges: GraphEdge[] } | null,
+  activeTypes: Set<string>,
+  query: string
+): { nodes: GraphNode[]; edges: GraphEdge[] } | null {
+  if (!graph) return null;
+  const q = query.trim().toLowerCase();
+  const nodes = graph.nodes.filter(
+    (n) => activeTypes.has(n.type) && (!q || n.label.toLowerCase().includes(q))
+  );
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+  return { nodes, edges };
+}
+
+function neighborIdsFor(
+  filtered: { nodes: GraphNode[]; edges: GraphEdge[] } | null,
+  selectedId: string | null
+): Set<string> | null {
+  if (!filtered || !selectedId) return null;
+  const set = new Set<string>([selectedId]);
+  for (const e of filtered.edges) {
+    if (e.source === selectedId) set.add(e.target);
+    if (e.target === selectedId) set.add(e.source);
+  }
+  return set;
+}
+
 export function KnowledgeGraph() {
   const [graph, setGraph] = React.useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [activeTypes, setActiveTypes] = React.useState<Set<string>>(
@@ -79,26 +107,22 @@ export function KnowledgeGraph() {
       .catch(() => setGraph({ nodes: [], edges: [] }));
   }, []);
 
-  const filtered = React.useMemo(() => {
-    if (!graph) return null;
-    const q = query.trim().toLowerCase();
-    const nodes = graph.nodes.filter(
-      (n) => activeTypes.has(n.type) && (!q || n.label.toLowerCase().includes(q))
-    );
-    const ids = new Set(nodes.map((n) => n.id));
-    const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
-    return { nodes, edges };
-  }, [graph, activeTypes, query]);
+  // Pure filter helper so both render and the layout effect derive the same
+  // subgraph from primitive inputs (no memo object needed as an effect dep).
+  const filtered = filterGraph(graph, activeTypes, query);
 
   // (Re)run the force layout whenever the visible subgraph changes.
+  // Deps are primitives/stable state (NOT the derived `filtered` object) so
+  // tick updates can't retrigger the effect into a loop.
   React.useEffect(() => {
-    if (!filtered || !filtered.nodes.length) return;
+    const visible = filterGraph(graph, activeTypes, query);
+    if (!visible || !visible.nodes.length) return;
     simRef.current?.stop();
-    const nodes: SimNode[] = filtered.nodes.map((n) => {
+    const nodes: SimNode[] = visible.nodes.map((n) => {
       const prev = posRef.current.get(n.id);
       return { ...n, x: prev?.x ?? (Math.random() - 0.5) * WIDTH, y: prev?.y ?? (Math.random() - 0.5) * HEIGHT };
     });
-    const links: SimLink[] = filtered.edges.map((e) => ({ ...e }));
+    const links: SimLink[] = visible.edges.map((e) => ({ ...e }));
     const sim = forceSimulation<SimNode, SimLink>(nodes)
       .force("link", forceLink<SimNode, SimLink>(links).id((d) => d.id).distance(70).strength(0.6))
       .force("charge", forceManyBody().strength(-220))
@@ -113,31 +137,20 @@ export function KnowledgeGraph() {
       sim.stop();
       posRef.current = new Map(nodes.map((n) => [n.id, n]));
     };
-  }, [filtered]);
+  }, [graph, activeTypes, query]);
 
-  const posById = React.useMemo(() => new Map(snap.map((n) => [n.id, n])), [snap]);
+  const posById = new Map(snap.map((n) => [n.id, n]));
 
-  const neighborIds = React.useMemo(() => {
-    if (!filtered || !selectedId) return null;
-    const set = new Set<string>([selectedId]);
-    for (const e of filtered.edges) {
-      if (e.source === selectedId) set.add(e.target);
-      if (e.target === selectedId) set.add(e.source);
-    }
-    return set;
-  }, [filtered, selectedId]);
+  const neighborIds = neighborIdsFor(filtered, selectedId);
 
   const selected = filtered?.nodes.find((n) => n.id === selectedId) ?? null;
-  const selectedEdges = React.useMemo(() => {
-    if (!filtered || !selectedId) return [];
-    return filtered.edges.filter((e) => e.source === selectedId || e.target === selectedId);
-  }, [filtered, selectedId]);
+  const selectedEdges =
+    filtered && selectedId
+      ? filtered.edges.filter((e) => e.source === selectedId || e.target === selectedId)
+      : [];
 
-  const nodeById = React.useMemo(() => {
-    const m = new Map<string, GraphNode>();
-    filtered?.nodes.forEach((n) => m.set(n.id, n));
-    return m;
-  }, [filtered]);
+  const nodeById = new Map<string, GraphNode>();
+  filtered?.nodes.forEach((n) => nodeById.set(n.id, n));
 
   const toggleType = (t: string) => {
     setActiveTypes((prev) => {

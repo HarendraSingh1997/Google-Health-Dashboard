@@ -20,6 +20,32 @@ interface MetricCardProps {
   statusLabel?: string;
 }
 
+// Mini sparkline SVG renderer (React Compiler memoizes the result).
+function renderSparkline(sparklineData?: SeriesPoint[]) {
+  if (!sparklineData || sparklineData.length < 2) return null;
+  const sample = sparklineData.length > 25 ? sparklineData.slice(-25) : sparklineData;
+  const vals = sample.map((s) => s.value);
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const range = maxV - minV || 1;
+  const width = 80;
+  const height = 28;
+
+  const points = sample
+    .map((p, i) => {
+      const x = (i / (sample.length - 1)) * width;
+      const y = height - ((p.value - minV) / range) * (height - 6) - 3;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  return (
+    <svg width={width} height={height} className="overflow-visible opacity-80 transition-opacity group-hover:opacity-100">
+      <polyline fill="none" stroke="currentColor" className="text-primary" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={points} />
+    </svg>
+  );
+}
+
 export function MetricCard({
   label,
   value,
@@ -34,32 +60,7 @@ export function MetricCard({
 }: MetricCardProps) {
   const up = (trendPct ?? 0) > 0;
   const flat = (trendPct ?? 0) === 0;
-
-  // Mini sparkline SVG renderer
-  const sparklineSvg = React.useMemo(() => {
-    if (!sparklineData || sparklineData.length < 2) return null;
-    const sample = sparklineData.length > 25 ? sparklineData.slice(-25) : sparklineData;
-    const vals = sample.map((s) => s.value);
-    const minV = Math.min(...vals);
-    const maxV = Math.max(...vals);
-    const range = maxV - minV || 1;
-    const width = 80;
-    const height = 28;
-
-    const points = sample
-      .map((p, i) => {
-        const x = (i / (sample.length - 1)) * width;
-        const y = height - ((p.value - minV) / range) * (height - 6) - 3;
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(" ");
-
-    return (
-      <svg width={width} height={height} className="overflow-visible opacity-80 transition-opacity group-hover:opacity-100">
-        <polyline fill="none" stroke="currentColor" className="text-primary" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={points} />
-      </svg>
-    );
-  }, [sparklineData]);
+  const sparklineSvg = renderSparkline(sparklineData);
 
   return (
     <Card className="group relative w-full overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">

@@ -53,6 +53,35 @@ function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): num
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+// Cumulative path distance per point (for the "distance covered" readout).
+function cumulativeDistances(session: GeoTrackSession): number[] {
+  const cum: number[] = [0];
+  for (let i = 1; i < session.points.length; i++) {
+    const a = session.points[i - 1];
+    const b = session.points[i];
+    cum.push(cum[i - 1] + haversineM(a[0], a[1], b[0], b[1]));
+  }
+  return cum;
+}
+
+function positionAt(session: GeoTrackSession, safePos: number, cumDist: number[]) {
+  const len = session.points.length;
+  const i = Math.min(Math.max(0, Math.floor(safePos)), len - 1);
+  const j = Math.min(i + 1, len - 1);
+  const frac = Math.min(1, Math.max(0, safePos - i));
+  const a = session.points[i];
+  const b = session.points[j];
+  const current: LatLng = [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac];
+  const traveled: LatLng[] = session.points.slice(0, i + 1).map((p) => [p[0], p[1]]);
+  traveled.push(current);
+  return {
+    traveled,
+    current,
+    elapsedSec: a[3] + (b[3] - a[3]) * frac,
+    distCovered: cumDist[i] + (cumDist[j] - cumDist[i]) * frac,
+  };
+}
+
 export function RoutePlayer({ tracks }: { tracks: GeoTrackSession[] }) {
   const [selected, setSelected] = React.useState(0);
   const [pos, setPos] = React.useState(0); // float index into session.points
@@ -71,16 +100,7 @@ export function RoutePlayer({ tracks }: { tracks: GeoTrackSession[] }) {
   const durationSec = session && session.points.length ? session.points[session.points.length - 1][3] : 0;
 
   // Cumulative path distance per point (for "distance covered" readout).
-  const cumDist = React.useMemo(() => {
-    if (!session) return [0];
-    const cum: number[] = [0];
-    for (let i = 1; i < session.points.length; i++) {
-      const a = session.points[i - 1];
-      const b = session.points[i];
-      cum.push(cum[i - 1] + haversineM(a[0], a[1], b[0], b[1]));
-    }
-    return cum;
-  }, [session]);
+  const cumDist = session ? cumulativeDistances(session) : [0];
 
   // requestAnimationFrame playback loop: advance float position at a constant
   // points-per-second rate so every session animates start → end in ~30s @1x.
@@ -112,26 +132,10 @@ export function RoutePlayer({ tracks }: { tracks: GeoTrackSession[] }) {
   // a non-finite or out-of-range value ever slips through (slider, rAF edge).
   const safePos = n > 1 && Number.isFinite(pos) ? Math.min(Math.max(0, pos), n - 1) : 0;
 
-  const { traveled, current, elapsedSec, distCovered } = React.useMemo(() => {
-    if (!session || !session.points.length) {
-      return { traveled: [] as LatLng[], current: [0, 0] as LatLng, elapsedSec: 0, distCovered: 0 };
-    }
-    const len = session.points.length;
-    const i = Math.min(Math.max(0, Math.floor(safePos)), len - 1);
-    const j = Math.min(i + 1, len - 1);
-    const frac = Math.min(1, Math.max(0, safePos - i));
-    const a = session.points[i];
-    const b = session.points[j];
-    const cur: LatLng = [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac];
-    const tr: LatLng[] = session.points.slice(0, i + 1).map((p) => [p[0], p[1]]);
-    tr.push(cur);
-    return {
-      traveled: tr,
-      current: cur,
-      elapsedSec: a[3] + (b[3] - a[3]) * frac,
-      distCovered: cumDist[i] + (cumDist[j] - cumDist[i]) * frac,
-    };
-  }, [session, safePos, cumDist]);
+  const { traveled, current, elapsedSec, distCovered } =
+    session && session.points.length
+      ? positionAt(session, safePos, cumDist)
+      : { traveled: [] as LatLng[], current: [0, 0] as LatLng, elapsedSec: 0, distCovered: 0 };
 
   if (!session) {
     return (

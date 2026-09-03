@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import type { GeoTrackSession } from "@/lib/types";
@@ -29,14 +29,9 @@ export default function RouteMap({
   /** Interpolated current position of the moving marker. */
   current: LatLng;
 }) {
-  const full = useMemo(
-    () => session.points.map((p) => [p[0], p[1]] as LatLng),
-    [session]
-  );
-  const center = useMemo<LatLng>(() => {
-    const mid = session.points[Math.floor(session.points.length / 2)];
-    return [mid[0], mid[1]];
-  }, [session]);
+  const full = session.points.map((p) => [p[0], p[1]] as LatLng);
+  const mid = session.points[Math.floor(session.points.length / 2)];
+  const center: LatLng = [mid[0], mid[1]];
   const startPt: LatLng = [session.points[0][0], session.points[0][1]];
   const last = session.points[session.points.length - 1];
   const endPt: LatLng = [last[0], last[1]];

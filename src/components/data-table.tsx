@@ -63,9 +63,9 @@ export function DataTable({
   pageSize?: number;
 }) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
-  // Memoize defs: a fresh array each render would bust useReactTable's
-  // memoization and reset sorting/pagination on every parent re-render.
-  const columnDefs = React.useMemo(() => buildColumnDefs(columns), [columns]);
+  // Fresh defs each render is fine: parent re-renders coincide with data
+  // changes (filter/dataset switches), when resetting to page 1 is desired.
+  const columnDefs = buildColumnDefs(columns);
   const table = useReactTable({
     data: rows,
     columns: columnDefs,

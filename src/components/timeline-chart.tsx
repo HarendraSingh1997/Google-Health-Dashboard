@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { countBy, groupBy, maxBy, minBy, orderBy, sumBy } from "lodash";
 import {
   ScatterChart,
   Scatter,
@@ -122,6 +123,98 @@ function TimelineTooltip({
   );
 }
 
+function buildTimeline(workouts: WorkoutLog[], badges: BadgeItem[], records: PersonalRecords) {
+  // Lane assignment: top activities by session count in view.
+  const counts = countBy(workouts, (w) => w.activityName);
+  const ranked = orderBy(Object.entries(counts), [([, c]) => c], ["desc"]);
+  const top = ranked.slice(0, MAX_LANES).map(([a]) => a);
+  const laneOf = (activity: string) => (top.includes(activity) ? activity : OTHER_LANE);
+  const lanes = [MILESTONE_LANE, ...top];
+  if (ranked.length > MAX_LANES) lanes.push(OTHER_LANE);
+  const laneColors = new Map<string, string>();
+  top.forEach((a, i) => laneColors.set(a, colorFor(i)));
+  laneColors.set(OTHER_LANE, "var(--color-muted-foreground)");
+
+  // Aggregate same-day + same-activity sessions into one dot.
+  const sessionDots = orderBy(
+    Object.entries(groupBy(workouts, (w) => `${w.date}|${laneOf(w.activityName)}`)).map(
+      ([key, ws]) => {
+        const [date, lane] = key.split("|");
+        const first = ws[0];
+        const durationMin = sumBy(ws, (w) => w.durationMin);
+        return {
+          x: epochOf(date),
+          y: lane,
+          date,
+          activity: lane === OTHER_LANE ? `${first.activityName} (other)` : first.activityName,
+          sessions: ws.length,
+          durationMin,
+          calories: sumBy(ws, (w) => w.calories),
+          distanceKm: sumBy(ws, (w) => w.distanceKm ?? 0),
+          color: laneColors.get(lane) ?? colorFor(0),
+          r: radiusFor(durationMin),
+        } as SessionDot;
+      }
+    ),
+    ["x"],
+    ["asc"]
+  );
+
+  // Window follows the workouts in view.
+  const minX = minBy(sessionDots, (d) => d.x)?.x ?? Date.UTC(2020, 0, 1);
+  const maxX = maxBy(sessionDots, (d) => d.x)?.x ?? Date.UTC(2020, 0, 2);
+  const inWindow = (dateStr: string) => {
+    if (!dateStr || dateStr.length < 10) return false;
+    const x = epochOf(dateStr.slice(0, 10));
+    return x >= minX && x <= maxX;
+  };
+
+  // Milestones: badges + records + streak start, capped for readability.
+  const milestoneDots: MilestoneDot[] = [];
+  const inBadges = orderBy(
+    badges.filter((b) => inWindow(b.earnedDate)),
+    [(b) => b.value],
+    ["desc"]
+  ).slice(0, MAX_MILESTONES);
+  for (const b of inBadges) {
+    milestoneDots.push({
+      x: epochOf(b.earnedDate.slice(0, 10)),
+      y: MILESTONE_LANE,
+      label: b.shortName || b.name,
+      detail: b.description || b.category,
+    });
+  }
+  const recs: { date: string; label: string; detail: string }[] = [];
+  if (records.maxStepsDay)
+    recs.push({
+      date: records.maxStepsDay.date,
+      label: "Peak steps day",
+      detail: `${formatNumber(records.maxStepsDay.value)} steps`,
+    });
+  if (records.highestSleepScore)
+    recs.push({
+      date: records.highestSleepScore.date,
+      label: "Best sleep score",
+      detail: `${records.highestSleepScore.value}/100`,
+    });
+  if (records.longestStreakPeriod) {
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(records.longestStreakPeriod);
+    if (m)
+      recs.push({
+        date: m[1],
+        label: `${records.longest10kStreakDays}-day 10k streak`,
+        detail: records.longestStreakPeriod,
+      });
+  }
+  for (const r of recs) {
+    if (inWindow(r.date)) {
+      milestoneDots.push({ x: epochOf(r.date.slice(0, 10)), y: MILESTONE_LANE, label: r.label, detail: r.detail });
+    }
+  }
+
+  return { lanes, sessionDots, milestoneDots, minX, maxX, laneColors };
+}
+
 export function TimelineChart({
   workouts,
   badges,
@@ -131,102 +224,8 @@ export function TimelineChart({
   badges: BadgeItem[];
   records: PersonalRecords;
 }) {
-  const { lanes, sessionDots, milestoneDots, minX, maxX, laneColors } = React.useMemo(() => {
-    // Lane assignment: top activities by session count in view.
-    const counts = new Map<string, number>();
-    for (const w of workouts) counts.set(w.activityName, (counts.get(w.activityName) ?? 0) + 1);
-    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-    const top = ranked.slice(0, MAX_LANES).map(([a]) => a);
-    const laneOf = (activity: string) => (top.includes(activity) ? activity : OTHER_LANE);
-    const lanes = [MILESTONE_LANE, ...top];
-    if (ranked.length > MAX_LANES) lanes.push(OTHER_LANE);
-    const laneColors = new Map<string, string>();
-    top.forEach((a, i) => laneColors.set(a, colorFor(i)));
-    laneColors.set(OTHER_LANE, "var(--color-muted-foreground)");
-
-    // Aggregate same-day + same-activity sessions into one dot.
-    const agg = new Map<string, SessionDot>();
-    for (const w of workouts) {
-      const lane = laneOf(w.activityName);
-      const key = `${w.date}|${lane}`;
-      const cur = agg.get(key);
-      if (cur) {
-        cur.sessions += 1;
-        cur.durationMin += w.durationMin;
-        cur.calories += w.calories;
-        cur.distanceKm += w.distanceKm ?? 0;
-        cur.r = radiusFor(cur.durationMin);
-      } else {
-        agg.set(key, {
-          x: epochOf(w.date),
-          y: lane,
-          date: w.date,
-          activity: lane === OTHER_LANE ? `${w.activityName} (other)` : w.activityName,
-          sessions: 1,
-          durationMin: w.durationMin,
-          calories: w.calories,
-          distanceKm: w.distanceKm ?? 0,
-          color: laneColors.get(lane) ?? colorFor(0),
-          r: radiusFor(w.durationMin),
-        });
-      }
-    }
-    const sessionDots = [...agg.values()].sort((a, b) => a.x - b.x);
-
-    // Window follows the workouts in view.
-    const xs = sessionDots.map((d) => d.x);
-    const minX = xs.length ? Math.min(...xs) : Date.UTC(2020, 0, 1);
-    const maxX = xs.length ? Math.max(...xs) : Date.UTC(2020, 0, 2);
-    const inWindow = (dateStr: string) => {
-      if (!dateStr || dateStr.length < 10) return false;
-      const x = epochOf(dateStr.slice(0, 10));
-      return x >= minX && x <= maxX;
-    };
-
-    // Milestones: badges + records + streak start, capped for readability.
-    const milestoneDots: MilestoneDot[] = [];
-    const inBadges = badges
-      .filter((b) => inWindow(b.earnedDate))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, MAX_MILESTONES);
-    for (const b of inBadges) {
-      milestoneDots.push({
-        x: epochOf(b.earnedDate.slice(0, 10)),
-        y: MILESTONE_LANE,
-        label: b.shortName || b.name,
-        detail: b.description || b.category,
-      });
-    }
-    const recs: { date: string; label: string; detail: string }[] = [];
-    if (records.maxStepsDay)
-      recs.push({
-        date: records.maxStepsDay.date,
-        label: "Peak steps day",
-        detail: `${formatNumber(records.maxStepsDay.value)} steps`,
-      });
-    if (records.highestSleepScore)
-      recs.push({
-        date: records.highestSleepScore.date,
-        label: "Best sleep score",
-        detail: `${records.highestSleepScore.value}/100`,
-      });
-    if (records.longestStreakPeriod) {
-      const m = /^(\d{4}-\d{2}-\d{2})/.exec(records.longestStreakPeriod);
-      if (m)
-        recs.push({
-          date: m[1],
-          label: `${records.longest10kStreakDays}-day 10k streak`,
-          detail: records.longestStreakPeriod,
-        });
-    }
-    for (const r of recs) {
-      if (inWindow(r.date)) {
-        milestoneDots.push({ x: epochOf(r.date.slice(0, 10)), y: MILESTONE_LANE, label: r.label, detail: r.detail });
-      }
-    }
-
-    return { lanes, sessionDots, milestoneDots, minX, maxX, laneColors };
-  }, [workouts, badges, records]);
+  const { lanes, sessionDots, milestoneDots, minX, maxX, laneColors } =
+    buildTimeline(workouts, badges, records);
 
   if (!sessionDots.length) {
     return (
@@ -237,7 +236,7 @@ export function TimelineChart({
   }
 
   const pad = 4 * 86400000;
-  const totalSessions = sessionDots.reduce((a, d) => a + d.sessions, 0);
+  const totalSessions = sumBy(sessionDots, (d) => d.sessions);
 
   return (
     <div>

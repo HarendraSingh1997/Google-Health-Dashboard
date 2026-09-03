@@ -1,5 +1,6 @@
 import type { HealthData, SeriesPoint, WorkoutLog, SleepStageLog } from "@/lib/types";
 import { formatNumber } from "@/lib/format";
+import { meanBy, sumBy } from "lodash";
 
 export interface HealthScoreResult {
   overallScore: number;
@@ -41,21 +42,15 @@ export function computeHealthScore(
   stressSeries: SeriesPoint[]
 ): HealthScoreResult {
   // 1. Sleep score (average of recent or filtered)
-  const avgSleep = sleepSeries.length
-    ? sleepSeries.reduce((a, b) => a + b.value, 0) / sleepSeries.length
-    : 78;
+  const avgSleep = sleepSeries.length ? meanBy(sleepSeries, (s) => s.value) : 78;
   const sleepSub = Math.min(100, Math.max(0, Math.round(avgSleep)));
 
   // 2. Activity score (target 10,000 steps = 100%)
-  const avgSteps = stepsSeries.length
-    ? stepsSeries.reduce((a, b) => a + b.value, 0) / stepsSeries.length
-    : 8000;
+  const avgSteps = stepsSeries.length ? meanBy(stepsSeries, (s) => s.value) : 8000;
   const activitySub = Math.min(100, Math.max(0, Math.round((avgSteps / 10000) * 100)));
 
   // 3. Heart score (resting HR ideal between 50-65 bpm)
-  const avgRhr = rhrSeries.length
-    ? rhrSeries.reduce((a, b) => a + b.value, 0) / rhrSeries.length
-    : 62;
+  const avgRhr = rhrSeries.length ? meanBy(rhrSeries, (s) => s.value) : 62;
   let heartSub = 85;
   if (avgRhr <= 60) heartSub = 95;
   else if (avgRhr <= 68) heartSub = 85;
@@ -63,9 +58,7 @@ export function computeHealthScore(
   else heartSub = 60;
 
   // 4. Stress score (higher stress score in Fitbit = better stress management / lower strain)
-  const avgStress = stressSeries.length
-    ? stressSeries.reduce((a, b) => a + b.value, 0) / stressSeries.length
-    : 75;
+  const avgStress = stressSeries.length ? meanBy(stressSeries, (s) => s.value) : 75;
   const stressSub = Math.min(100, Math.max(0, Math.round(avgStress)));
 
   // Composite: Sleep 35%, Activity 30%, Heart 20%, Stress 15%
@@ -228,7 +221,7 @@ export function generateHealthInsights(
 
   // 3. Restorative Sleep Insight
   const avgSleepScore = filteredSleep.length
-    ? Math.round(filteredSleep.reduce((a, b) => a + b.value, 0) / filteredSleep.length)
+    ? Math.round(meanBy(filteredSleep, (s) => s.value))
     : 80;
   insights.push({
     id: "sleep-quality",
@@ -243,7 +236,7 @@ export function generateHealthInsights(
 
   // 4. Workout Frequency
   const workoutCount = filteredWorkouts.length;
-  const totalBurn = filteredWorkouts.reduce((a, b) => a + b.calories, 0);
+  const totalBurn = sumBy(filteredWorkouts, (w) => w.calories);
   insights.push({
     id: "workout-frequency",
     category: "activity",
@@ -257,9 +250,7 @@ export function generateHealthInsights(
 
   // 5. Resting Heart Rate Stability
   const rhrSeries = data.datasets.restingHR.series;
-  const avgRhr = rhrSeries.length
-    ? Math.round(rhrSeries.reduce((a, b) => a + b.value, 0) / rhrSeries.length)
-    : 62;
+  const avgRhr = rhrSeries.length ? Math.round(meanBy(rhrSeries, (s) => s.value)) : 62;
   insights.push({
     id: "heart-stability",
     category: "heart",

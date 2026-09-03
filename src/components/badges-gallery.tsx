@@ -6,26 +6,26 @@ import { Badge } from "@/components/ui/badge";
 import { Award, Trophy, Search, Footprints, Mountain, Compass } from "lucide-react";
 import type { BadgeItem } from "@/lib/types";
 
+function badgeCategories(badges: BadgeItem[]): string[] {
+  const cats = new Set<string>();
+  badges.forEach((b) => cats.add(b.category));
+  return Array.from(cats).sort();
+}
+
 export function BadgesGallery({ badges }: { badges: BadgeItem[] }) {
   const [searchTerm, setSearchTerm] = React.useState("");
   const [selectedCategory, setSelectedCategory] = React.useState<string>("all");
 
-  const categories = React.useMemo(() => {
-    const cats = new Set<string>();
-    badges.forEach((b) => cats.add(b.category));
-    return Array.from(cats).sort();
-  }, [badges]);
+  const categories = badgeCategories(badges);
 
-  const filteredBadges = React.useMemo(() => {
-    return badges.filter((b) => {
-      const matchSearch =
-        b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.earnedDate.includes(searchTerm);
-      const matchCat = selectedCategory === "all" || b.category === selectedCategory;
-      return matchSearch && matchCat;
-    });
-  }, [badges, searchTerm, selectedCategory]);
+  const filteredBadges = badges.filter((b) => {
+    const matchSearch =
+      b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      b.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      b.earnedDate.includes(searchTerm);
+    const matchCat = selectedCategory === "all" || b.category === selectedCategory;
+    return matchSearch && matchCat;
+  });
 
   const getBadgeIcon = (cat: string) => {
     const c = cat.toLowerCase();

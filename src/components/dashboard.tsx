@@ -23,6 +23,7 @@ import { AICoach } from "@/components/ai-coach";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
 import { SwimSection } from "@/components/swim-section";
 import { TimelineChart } from "@/components/timeline-chart";
+import { WorkoutWordCloud } from "@/components/word-cloud";
 import { FunnelChartView } from "@/components/funnel-chart";
 import { DataTable } from "@/components/data-table";
 import { WorkoutsTable } from "@/components/workouts-table";
@@ -116,7 +117,46 @@ const SLEEP_TABLE_COLUMNS: { key: string; label: string; align?: "left" | "right
   { key: "efficiency", label: "Efficiency %", align: "right" },
 ];
 
-// Explorer tab: isolated + memoized so typing/selecting elsewhere doesn't rebuild it.
+function periodOptionsFor(
+  granularity: Granularity,
+  year: string,
+  opts: { years: string[]; months: string[]; weeks: string[] }
+): string[] {
+  if (granularity === "all") return [];
+  if (granularity === "year") return opts.years.filter((y) => year === "all" || y === year);
+  if (granularity === "month") return opts.months.filter((m) => year === "all" || m.startsWith(year));
+  return opts.weeks.filter((w) => year === "all" || w.startsWith(year));
+}
+
+// Explorer tab: isolated so typing/selecting elsewhere doesn't rebuild it.
+// (React Compiler auto-memoizes — no manual useMemo needed.)
+function explorerSeriesFor(dataset: string, series: Record<string, SeriesPoint[]>) {
+  switch (dataset) {
+    case "steps":
+      return { activeSeries: series.fSteps, unit: "steps" };
+    case "calories":
+      return { activeSeries: series.fCalories, unit: "kcal" };
+    case "distance":
+      return { activeSeries: series.fDistance, unit: "km" };
+    case "sleepScore":
+      return { activeSeries: series.fSleepScore, unit: "score" };
+    case "restingHR":
+      return { activeSeries: series.fRhr, unit: "bpm" };
+    case "hrv":
+      return { activeSeries: series.fHrv, unit: "ms" };
+    case "vo2max":
+      return { activeSeries: series.fVo2, unit: "ml/kg" };
+    case "spo2":
+      return { activeSeries: series.fSpo2, unit: "%" };
+    case "weight":
+      return { activeSeries: series.fWeight, unit: "kg" };
+    case "stressScore":
+      return { activeSeries: series.fStress, unit: "pts" };
+    default:
+      return { activeSeries: [] as SeriesPoint[], unit: "" };
+  }
+}
+
 function ExplorerTable({
   dataset,
   series,
@@ -124,41 +164,12 @@ function ExplorerTable({
   dataset: string;
   series: Record<string, SeriesPoint[]>;
 }) {
-  const { activeSeries, unit } = React.useMemo(() => {
-    switch (dataset) {
-      case "steps":
-        return { activeSeries: series.fSteps, unit: "steps" };
-      case "calories":
-        return { activeSeries: series.fCalories, unit: "kcal" };
-      case "distance":
-        return { activeSeries: series.fDistance, unit: "km" };
-      case "sleepScore":
-        return { activeSeries: series.fSleepScore, unit: "score" };
-      case "restingHR":
-        return { activeSeries: series.fRhr, unit: "bpm" };
-      case "hrv":
-        return { activeSeries: series.fHrv, unit: "ms" };
-      case "vo2max":
-        return { activeSeries: series.fVo2, unit: "ml/kg" };
-      case "spo2":
-        return { activeSeries: series.fSpo2, unit: "%" };
-      case "weight":
-        return { activeSeries: series.fWeight, unit: "kg" };
-      case "stressScore":
-        return { activeSeries: series.fStress, unit: "pts" };
-      default:
-        return { activeSeries: [] as SeriesPoint[], unit: "" };
-    }
-  }, [dataset, series]);
-
-  const columns = React.useMemo(
-    () => [
-      { key: "date", label: "Date" },
-      { key: "value", label: `Value (${unit})`, align: "right" as const },
-    ],
-    [unit]
-  );
-  const rows = React.useMemo(() => rowsFromSeries(activeSeries), [activeSeries]);
+  const { activeSeries, unit } = explorerSeriesFor(dataset, series);
+  const columns = [
+    { key: "date", label: "Date" },
+    { key: "value", label: `Value (${unit})`, align: "right" as const },
+  ];
+  const rows = rowsFromSeries(activeSeries);
 
   return (
     <DataTable
@@ -181,188 +192,124 @@ export function Dashboard({ data }: { data: HealthData }) {
   const [period, setPeriod] = React.useState<string>("all");
   const [explorerDataset, setExplorerDataset] = React.useState<string>("steps");
 
-  const opts = React.useMemo(() => buildOptions(data), [data]);
+  const opts = buildOptions(data);
 
-  const periodOptions = React.useMemo(() => {
-    if (granularity === "all") return [] as string[];
-    if (granularity === "year") return opts.years.filter((y) => year === "all" || y === year);
-    if (granularity === "month") return opts.months.filter((m) => year === "all" || m.startsWith(year));
-    return opts.weeks.filter((w) => year === "all" || w.startsWith(year));
-  }, [granularity, year, opts]);
+  const periodOptions = periodOptionsFor(granularity, year, opts);
 
   // Derive the effective period during render (no setState-in-effect cascade):
   // when options change, filtering falls back to the first option automatically.
   const effectivePeriod =
     granularity === "all" ? "all" : periodOptions.includes(period) ? period : (periodOptions[0] ?? "all");
 
-  const filter: FilterState = React.useMemo(
-    () => ({ preset, granularity, year, period: effectivePeriod }),
-    [preset, granularity, year, effectivePeriod]
-  );
+  const filter: FilterState = { preset, granularity, year, period: effectivePeriod };
 
-  // ---- Filtered series (single memo: ~20 array scans run only on filter/data change) ----
-  const {
-    fSteps, fCalories, fDistance, fIntensity, fWorkouts, fSleepStages,
-    fSleepScore, fDeep, fSleepRhr, fStress, fRhr, fHrv,
-    fSpo2, fResp, fTemp, fVo2, fWeight, fAzb, fGeo, fTracks,
-  } = React.useMemo(() => {
-    const max = opts.maxDate;
-    return {
-      fSteps: filterDaily(derived.dailyStepsSeries, filter, max),
-      fCalories: filterDaily(derived.dailyCaloriesSeries, filter, max),
-      fDistance: filterDaily(derived.dailyDistanceSeries, filter, max),
-      fIntensity: filterIntensity(derived.dailyActivityIntensity, filter, max),
-      fWorkouts: filterWorkouts(derived.workouts, filter, max),
-      fSleepStages: filterSleepStages(derived.sleepStagesDetailed, filter, max),
-      fSleepScore: filterDaily(D.sleepScore.series, filter, max),
-      fDeep: filterDaily(D.sleepDeep.series, filter, max),
-      fSleepRhr: filterDaily(D.sleepRhr.series, filter, max),
-      fStress: filterDaily(D.stressScore.series, filter, max),
-      fRhr: filterDaily(D.restingHR.series, filter, max),
-      fHrv: filterDaily(D.hrv.series, filter, max),
-      fSpo2: filterDaily(D.spo2.series, filter, max),
-      fResp: filterDaily(D.respiratory.series, filter, max),
-      fTemp: filterDaily(D.sleepTemp.series, filter, max),
-      fVo2: filterDaily(D.vo2max.series, filter, max),
-      fWeight: filterDaily(D.weight.series, filter, max),
-      fAzb: filterMonthly(derived.azmSeries, filter, max),
-      fGeo: filterGeo(derived.geoPoints, filter, max),
-      fTracks: filterGeoTracks(derived.geoTracks ?? [], filter, max),
-    };
-  }, [derived, D, filter, opts.maxDate]);
+  // ---- Filtered series (recomputed on render; React Compiler memoizes) ----
+  const maxDate = opts.maxDate;
+  const fSteps = filterDaily(derived.dailyStepsSeries, filter, maxDate);
+  const fCalories = filterDaily(derived.dailyCaloriesSeries, filter, maxDate);
+  const fDistance = filterDaily(derived.dailyDistanceSeries, filter, maxDate);
+  const fIntensity = filterIntensity(derived.dailyActivityIntensity, filter, maxDate);
+  const fWorkouts = filterWorkouts(derived.workouts, filter, maxDate);
+  const fSleepStages = filterSleepStages(derived.sleepStagesDetailed, filter, maxDate);
+  const fSleepScore = filterDaily(D.sleepScore.series, filter, maxDate);
+  const fDeep = filterDaily(D.sleepDeep.series, filter, maxDate);
+  const fSleepRhr = filterDaily(D.sleepRhr.series, filter, maxDate);
+  const fStress = filterDaily(D.stressScore.series, filter, maxDate);
+  const fRhr = filterDaily(D.restingHR.series, filter, maxDate);
+  const fHrv = filterDaily(D.hrv.series, filter, maxDate);
+  const fSpo2 = filterDaily(D.spo2.series, filter, maxDate);
+  const fResp = filterDaily(D.respiratory.series, filter, maxDate);
+  const fTemp = filterDaily(D.sleepTemp.series, filter, maxDate);
+  const fVo2 = filterDaily(D.vo2max.series, filter, maxDate);
+  const fWeight = filterDaily(D.weight.series, filter, maxDate);
+  const fAzb = filterMonthly(derived.azmSeries, filter, maxDate);
+  const fGeo = filterGeo(derived.geoPoints, filter, maxDate);
+  const fTracks = filterGeoTracks(derived.geoTracks ?? [], filter, maxDate);
 
-  // ---- Summaries (computed once per filter change, not per JSX call-site) ----
-  const {
-    sumSteps, sumCalories, sumSleepScore, sumRhr, sumHrv, sumVo2, sumSpo2,
-    sumWeight, sumSleepRhr,
-  } = React.useMemo(
-    () => ({
-      sumSteps: summarize(fSteps),
-      sumCalories: summarize(fCalories),
-      sumSleepScore: summarize(fSleepScore),
-      sumRhr: summarize(fRhr),
-      sumHrv: summarize(fHrv),
-      sumVo2: summarize(fVo2),
-      sumSpo2: summarize(fSpo2),
-      sumWeight: summarize(fWeight),
-      sumSleepRhr: summarize(fSleepRhr),
-    }),
-    [fSteps, fCalories, fSleepScore, fRhr, fHrv, fVo2, fSpo2, fWeight, fSleepRhr]
-  );
+  // ---- Summaries (one per call-site value, compiler-memoized) ----
+  const sumSteps = summarize(fSteps);
+  const sumCalories = summarize(fCalories);
+  const sumSleepScore = summarize(fSleepScore);
+  const sumRhr = summarize(fRhr);
+  const sumHrv = summarize(fHrv);
+  const sumVo2 = summarize(fVo2);
+  const sumSpo2 = summarize(fSpo2);
+  const sumWeight = summarize(fWeight);
+  const sumSleepRhr = summarize(fSleepRhr);
 
-  // ---- Chart-ready shapes (stable references keep Recharts/TanStack memoized) ----
-  const {
-    cSteps, cCalories, cSleepScore, cSleepRhr, cDeep, cTemp, cRhr, cHrv,
-    cVo2, cSpo2, cResp, cStress,
-  } = React.useMemo(
-    () => ({
-      cSteps: toChart(fSteps),
-      cCalories: toChart(fCalories),
-      cSleepScore: toChart(fSleepScore),
-      cSleepRhr: toChart(fSleepRhr),
-      cDeep: toChart(fDeep),
-      cTemp: toChart(fTemp),
-      cRhr: toChart(fRhr),
-      cHrv: toChart(fHrv),
-      cVo2: toChart(fVo2),
-      cSpo2: toChart(fSpo2),
-      cResp: toChart(fResp),
-      cStress: toChart(fStress),
-    }),
-    [fSteps, fCalories, fSleepScore, fSleepRhr, fDeep, fTemp, fRhr, fHrv, fVo2, fSpo2, fResp, fStress]
-  );
+  // ---- Chart-ready shapes ----
+  const cSteps = toChart(fSteps);
+  const cCalories = toChart(fCalories);
+  const cSleepScore = toChart(fSleepScore);
+  const cSleepRhr = toChart(fSleepRhr);
+  const cDeep = toChart(fDeep);
+  const cTemp = toChart(fTemp);
+  const cRhr = toChart(fRhr);
+  const cHrv = toChart(fHrv);
+  const cVo2 = toChart(fVo2);
+  const cSpo2 = toChart(fSpo2);
+  const cResp = toChart(fResp);
+  const cStress = toChart(fStress);
 
   // ---- Health Score & Insights ----
-  const healthScore = React.useMemo(
-    () => computeHealthScore(fSleepScore, fSteps, fRhr, fStress),
-    [fSleepScore, fSteps, fRhr, fStress]
-  );
+  const healthScore = computeHealthScore(fSleepScore, fSteps, fRhr, fStress);
 
-  const weekdayComparison = React.useMemo(
-    () => computeWeekdayVsWeekend(fSteps, fSleepStages, fCalories),
-    [fSteps, fSleepStages, fCalories]
-  );
+  const weekdayComparison = computeWeekdayVsWeekend(fSteps, fSleepStages, fCalories);
 
-  const insightsList = React.useMemo(
-    () => generateHealthInsights(data, fSteps, fSleepScore, fWorkouts),
-    [data, fSteps, fSleepScore, fWorkouts]
-  );
+  const insightsList = generateHealthInsights(data, fSteps, fSleepScore, fWorkouts);
 
   // Sleep Stages Stacked Data
-  const sleepStagesChartData = React.useMemo(
-    () =>
-      fSleepStages.map((s) => ({
-        date: s.date,
-        deep: s.deepMin,
-        rem: s.remMin,
-        light: s.lightMin,
-        wake: s.wakeMin,
-      })),
-    [fSleepStages]
-  );
+  const sleepStagesChartData = fSleepStages.map((s) => ({
+    date: s.date,
+    deep: s.deepMin,
+    rem: s.remMin,
+    light: s.lightMin,
+    wake: s.wakeMin,
+  }));
 
   // Activity Intensity Chart Data
-  const intensityChartData = React.useMemo(
-    () =>
-      fIntensity.map((i) => ({
-        date: i.date,
-        very: i.very,
-        fairly: i.fairly,
-        lightly: i.lightly,
-      })),
-    [fIntensity]
-  );
+  const intensityChartData = fIntensity.map((i) => ({
+    date: i.date,
+    very: i.very,
+    fairly: i.fairly,
+    lightly: i.lightly,
+  }));
 
   // AZM Funnel
-  const azmFunnel = React.useMemo(
-    () => [
-      { stage: "Months tracked", value: fAzb.length },
-      { stage: "Fat burn", value: fAzb.filter((m) => m.FAT_BURN > 0).length },
-      { stage: "Cardio", value: fAzb.filter((m) => m.CARDIO > 0).length },
-      { stage: "Peak", value: fAzb.filter((m) => m.PEAK > 0).length },
-    ],
-    [fAzb]
-  );
+  const azmFunnel = [
+    { stage: "Months tracked", value: fAzb.length },
+    { stage: "Fat burn", value: fAzb.filter((m) => m.FAT_BURN > 0).length },
+    { stage: "Cardio", value: fAzb.filter((m) => m.CARDIO > 0).length },
+    { stage: "Peak", value: fAzb.filter((m) => m.PEAK > 0).length },
+  ];
 
-  const stressStatusData = React.useMemo(
-    () => Object.entries(derived.stressStatus).map(([name, value]) => ({ name, value })),
-    [derived.stressStatus]
-  );
-  const moodData = React.useMemo(
-    () => Object.entries(derived.moodCounts).map(([name, value]) => ({ name, value })),
-    [derived.moodCounts]
-  );
+  const stressStatusData = Object.entries(derived.stressStatus).map(([name, value]) => ({ name, value }));
+  const moodData = Object.entries(derived.moodCounts).map(([name, value]) => ({ name, value }));
 
-  const weekdayChartData = React.useMemo(
-    () => [
-      {
-        category: "Steps (Avg)",
-        Weekday: weekdayComparison.weekdayAvgSteps,
-        Weekend: weekdayComparison.weekendAvgSteps,
-      },
-      {
-        category: "Sleep (Hours)",
-        Weekday: Math.round(weekdayComparison.weekdayAvgSleepHours * 10) / 10,
-        Weekend: Math.round(weekdayComparison.weekendAvgSleepHours * 10) / 10,
-      },
-      {
-        category: "Calories (kcal)",
-        Weekday: weekdayComparison.weekdayAvgCalories,
-        Weekend: weekdayComparison.weekendAvgCalories,
-      },
-    ],
-    [weekdayComparison]
-  );
+  const weekdayChartData = [
+    {
+      category: "Steps (Avg)",
+      Weekday: weekdayComparison.weekdayAvgSteps,
+      Weekend: weekdayComparison.weekendAvgSteps,
+    },
+    {
+      category: "Sleep (Hours)",
+      Weekday: Math.round(weekdayComparison.weekdayAvgSleepHours * 10) / 10,
+      Weekend: Math.round(weekdayComparison.weekendAvgSleepHours * 10) / 10,
+    },
+    {
+      category: "Calories (kcal)",
+      Weekday: weekdayComparison.weekdayAvgCalories,
+      Weekend: weekdayComparison.weekendAvgCalories,
+    },
+  ];
 
-  const explorerSeries = React.useMemo(
-    () => ({ fSteps, fCalories, fDistance, fSleepScore, fRhr, fHrv, fVo2, fSpo2, fWeight, fStress }),
-    [fSteps, fCalories, fDistance, fSleepScore, fRhr, fHrv, fVo2, fSpo2, fWeight, fStress]
-  );
+  const explorerSeries = { fSteps, fCalories, fDistance, fSleepScore, fRhr, fHrv, fVo2, fSpo2, fWeight, fStress };
 
   const label = periodLabel(filter);
 
   // Quick export function
-  const handleExportJSON = React.useCallback(() => {
+  const handleExportJSON = () => {
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -370,7 +317,7 @@ export function Dashboard({ data }: { data: HealthData }) {
     a.download = `google-health-export-${new Date().toISOString().slice(0, 10)}.json`;
     URL.revokeObjectURL(url);
     a.click();
-  }, [data]);
+  };
 
   return (
     <main className="min-h-screen bg-background text-foreground pb-16">
@@ -914,6 +861,8 @@ export function Dashboard({ data }: { data: HealthData }) {
             </Card>
 
             <WorkoutsTable workouts={fWorkouts} />
+
+            <WorkoutWordCloud workouts={fWorkouts} />
 
             <SwimSection workouts={fWorkouts} />
           </TabsContent>
