@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# RAG / Chroma (local-only)
+.rag-venv/
+chroma-data/
+rag/__pycache__/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

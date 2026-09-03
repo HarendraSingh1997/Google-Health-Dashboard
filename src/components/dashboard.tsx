@@ -19,6 +19,8 @@ import {
 import { Heatmap } from "@/components/heatmap";
 import { GeoMap } from "@/components/geo-map";
 import { RoutePlayer } from "@/components/route-player";
+import { AICoach } from "@/components/ai-coach";
+import { KnowledgeGraph } from "@/components/knowledge-graph";
 import { FunnelChartView } from "@/components/funnel-chart";
 import { DataTable } from "@/components/data-table";
 import { WorkoutsTable } from "@/components/workouts-table";
@@ -528,6 +530,12 @@ export function Dashboard({ data }: { data: HealthData }) {
             </TabsTrigger>
             <TabsTrigger value="badges" className="rounded-xl px-3.5 py-2 text-xs font-semibold">
               🏆 Badges ({derived.badges.length})
+            </TabsTrigger>
+            <TabsTrigger value="coach" className="rounded-xl px-3.5 py-2 text-xs font-semibold">
+              🧠 AI Coach
+            </TabsTrigger>
+            <TabsTrigger value="graph" className="rounded-xl px-3.5 py-2 text-xs font-semibold">
+              🕸️ Knowledge Graph
             </TabsTrigger>
             <TabsTrigger value="explorer" className="rounded-xl px-3.5 py-2 text-xs font-semibold">
               📋 Data Explorer
@@ -1093,6 +1101,16 @@ export function Dashboard({ data }: { data: HealthData }) {
           {/* ================= BADGES TAB ================= */}
           <TabsContent value="badges" className="space-y-6">
             <BadgesGallery badges={derived.badges} />
+          </TabsContent>
+
+          {/* ================= AI COACH (RAG) TAB ================= */}
+          <TabsContent value="coach" className="space-y-6">
+            <AICoach />
+          </TabsContent>
+
+          {/* ================= KNOWLEDGE GRAPH TAB ================= */}
+          <TabsContent value="graph" className="space-y-6">
+            <KnowledgeGraph />
           </TabsContent>
 
           {/* ================= DATA EXPLORER TAB ================= */}

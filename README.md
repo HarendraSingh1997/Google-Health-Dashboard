@@ -6,7 +6,7 @@ Interactive Next.js dashboard for your **Google Health / Fitbit Takeout** export
 
 ## Features
 
-**Tabs (separate per category):** Overview · Sleep & Recovery · Activity & Workouts · Cardiovascular & Vitals · Stress & Mind · Geo & Elevation · Badges · Data Explorer
+**Tabs (separate per category):** Overview · Sleep & Recovery · Activity & Workouts · Cardiovascular & Vitals · Stress & Mind · Geo & Elevation · Badges · Data Explorer · AI Coach · Knowledge Graph
 
 | Area | Charts & Visuals |
 |------|------------------|
@@ -14,8 +14,10 @@ Interactive Next.js dashboard for your **Google Health / Fitbit Takeout** export
 | **Activity** | Daily steps/calories (area), intensity minutes (stacked area), monthly Active Zone Minutes (stacked bar), workouts table |
 | **Cardio** | Resting HR, HRV, VO2 Max, SpO2, respiratory rate (line/area) |
 | **Stress** | Daily stress score (area), status distribution (pie), moods (pie) |
-| **Geo** | OpenStreetMap (Leaflet + OSM tiles) — GPS centroids colored by elevation, 24×7 activity heatmap, training-intensity funnel |
+| **Geo** | OpenStreetMap (Leaflet + OSM tiles) — GPS centroids colored by elevation, **Session Route Replay** (animated start→finish playback per session), 24×7 activity heatmap, training-intensity funnel |
 | **Overview** | Health-score hero, personal-records banner, weekday vs weekend comparison, insights feed, 8 metric cards with sparklines |
+| **AI Coach** | Local RAG chat over your data (ChromaDB + Ollama) — streamed answers with sources, model switcher |
+| **Knowledge Graph** | Interactive force-directed entity graph (user → activities → months, sessions, badges, records) |
 
 **Filters:** preset range (All / 1Y / 90D / 30D / 7D) + granular **Year / Month / Week** selectors (`shadcn Select`) — every chart, KPI, funnel, map and table re-filters. Reset button.
 
@@ -24,18 +26,25 @@ Interactive Next.js dashboard for your **Google Health / Fitbit Takeout** export
 **Palette**
 `#E3F2FD` · `#90CAF9` · `#2196F3` · `#0D47A1` extended with `#64B5F6 #42A5F5 #1976D2 #1565C0 #0288D1 #01579B #4FC3F7 #82B1FF` + accents `#26A69A #FFA726 #AB47BC #EC407A #66BB6A` — applied via `src/lib/palette.ts`.
 
-**Cards:** `Card` (`src/components/ui/card.tsx`) patched to `w-full` + chart wrappers `flex w-full min-w-0 h-[280px]` with `ResponsiveContainer minWidth={0}` — full-width responsive, no `aspect-video` clipping.
+**Cards:** `Card` (`src/components/ui/card.tsx`) patched to `w-full` + chart wrappers with explicit
+pixel heights (`style={{ height }}` + numeric `ResponsiveContainer height`) — full-width responsive, no
+`aspect-video` clipping, no `width(-1)/height(-1)` warnings.
+
+**Numbers:** all grouping via `src/lib/format.ts` (`toLocaleString("en-US")`) so SSR and CSR render
+identically regardless of browser locale (no hydration mismatches).
 
 ## Data Pipeline
 
 ```
-Takeout 2/Google Health/**  →  scripts/build-data.mjs  →  public/data/health.json (513 KB)
+Takeout 2/Google Health/**  →  scripts/build-data.mjs  →  public/data/health.json (~2.3 MB)
 ```
 
 Aggregates from:
 * `Sleep Score/sleep_score.csv`, `Stress Score/Stress Score.csv`
 * `Physical Activity_GoogleData/daily_*.csv`, `Active Zone Minutes (AZM)/*.csv`, `gps_location_*.csv`
-* `Global Export Data/altitude-*.json`, steps/calories JSON
+* `Global Export Data/altitude-*.json`, `exercise-*.json` (workouts), `badge.json`, steps/calories JSON
+* `gps_location_*.csv` is additionally split into per-session movement tracks with workout
+  matching (`geoTracks` in `health.json`), which power the Session Route Replay map
 
 Run manually:
 
@@ -44,6 +53,37 @@ pnpm run build:data   # node scripts/build-data.mjs
 ```
 
 `predev`/`prebuild` run it automatically.
+
+## Local RAG — ChromaDB + Ollama (100% offline, no API keys)
+
+Two tabs are powered by retrieval-augmented generation over your own data:
+
+* **🧠 AI Coach** — chat UI that embeds your question (`nomic-embed-text`), retrieves the most
+  relevant snippets from a local ChromaDB collection, and streams an answer from a local model
+  (switchable: **Llama 3.2** fast / **Gemma 26B** smarter). Every answer lists its sources.
+* **🕸️ Knowledge Graph** — interactive force-directed entity graph (user → activities → months,
+  sessions, badges, records) with type filters, search, pan/zoom and click-to-explore.
+
+Setup (one time):
+
+```bash
+python3 -m venv .rag-venv
+./.rag-venv/bin/pip install "chromadb>=1.0" requests
+ollama pull nomic-embed-text llama3.2   # + optionally: ollama pull gemma4:26b
+```
+
+Run (two terminals, or one + background):
+
+```bash
+pnpm rag:server   # chroma run --path ./chroma-data --port 8000 (persistent local DB)
+pnpm rag:ingest   # embed health.json → Chroma (~2.2k docs) + emit public/data/graph.json
+pnpm dev
+```
+
+`pnpm rag:reset` wipes and rebuilds the collection. Re-run `pnpm rag:ingest` after the Takeout
+data changes. `OLLAMA_URL` / `CHROMA_URL` env vars override the `localhost` defaults
+(`src/app/api/ask/route.ts`). `chroma-data/` and `.rag-venv/` are gitignored; `graph.json` is
+regenerated by ingest. Requires `ollama serve` running (usually automatic with the Ollama app).
 
 ## Getting Started
 
@@ -61,10 +101,13 @@ The project lives at `Google-Health-Data/health-dashboard` so the build script c
 
 ```
 health-dashboard/
-  scripts/build-data.mjs      # CSV/JSON aggregation
+  scripts/build-data.mjs      # CSV/JSON aggregation → health.json
+  rag/ingest.py               # RAG ingestion → ChromaDB + graph.json (.rag-venv/, chroma-data/ gitignored)
   public/data/health.json     # generated, git-tracked
+  public/data/graph.json      # generated by rag ingest, git-tracked
   src/
     app/page.tsx              # server: loads health.json → <Dashboard data={data} />
+    app/api/ask/route.ts      # RAG endpoint: Ollama embed → Chroma retrieve → Ollama stream (SSE)
     components/
       dashboard.tsx           # client: filters, Tabs, Cards, charts, DataTable, GeoMap
       charts.tsx              # TimeSeriesChart, StackedAreaChart, MonthlyBarChart, Pie, WeekdayComparison
@@ -72,17 +115,22 @@ health-dashboard/
       metric-card.tsx         # KPI card with sparkline + badge
       heatmap.tsx             # 7×24 activity heatmap
       leaflet-map.tsx / geo-map.tsx  # dynamic ssr:false OpenStreetMap
+      route-player.tsx / route-map.tsx  # animated session route replay (rAF playback)
+      ai-coach.tsx            # RAG chat with model switcher + sources
+      knowledge-graph.tsx     # d3-force entity graph explorer
       funnel-chart.tsx        # AZM funnel
       workouts-table.tsx / badges-gallery.tsx / insights-card.tsx
       ui/{button,card,chart,select,table,tabs,badge,separator}
-    lib/{filter.ts,insights.ts,palette.ts,types.ts,utils.ts}
+    lib/{filter.ts,format.ts,insights.ts,palette.ts,types.ts,utils.ts}
 ```
 
 ## Tech Stack
 
 * **Next.js 16.3.3** (App Router, Turbopack) / React 19 / TypeScript 5
 * **shadcn** (preset `buKEvLs`) + Tailwind 4 + `tw-animate-css`
-* **Recharts 3** + `@tanstack/react-table 8` + `leaflet` + `react-leaflet 5`
+* **Recharts 3** + `@tanstack/react-table 8` + `leaflet` + `react-leaflet 5` + `d3-force 3`
+* **RAG (local):** `chromadb` server + Python client (`./.rag-venv`), `chromadb` JS client, Ollama
+  (`nomic-embed-text` embeddings · `llama3.2` / `gemma4:26b` chat)
 * **pnpm 9**
 
 ## Deploy
@@ -92,6 +140,10 @@ Push to `main` — Vercel auto-deploys Next.js. Or:
 ```bash
 pnpm build && pnpm start
 ```
+
+> Note: the **AI Coach** tab needs local Ollama + ChromaDB, so it only answers when served
+> from a machine running `ollama serve`, `pnpm rag:server` (after `pnpm rag:ingest`). All other
+> tabs are fully static and deploy anywhere.
 
 Export raw data from the header’s **Export JSON** button.
 
